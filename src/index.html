@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src * blob:; connect-src * ws: wss:; img-src * data:; frame-src *;">
+  <title>VoxCall — Softphone WebRTC</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-icon">📞</span>
+        <span class="logo-text">VoxCall</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-view="dialpad">⌨️ Discagem</button>
+        <button class="nav-btn" data-view="contacts">👤 Contatos</button>
+        <button class="nav-btn" data-view="history">📋 Histórico</button>
+        <button class="nav-btn" data-view="browser">🌐 Navegador</button>
+        <button class="nav-btn" data-view="settings">⚙️ Configurações</button>
+        <button class="nav-btn" data-view="diagnostics">🔍 Diagnóstico</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="theme-toggle" class="btn-ghost">☀️ Claro</button>
+        <div id="status-badge" class="status-badge status-offline">Desconectado</div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <!-- Incoming call banner -->
+      <div id="incoming-banner" class="incoming-banner">
+        <div class="incoming-info">
+          <span class="incoming-label">Chamada recebida</span>
+          <span id="incoming-caller" class="incoming-caller">—</span>
+          <span id="incoming-number" class="incoming-number">—</span>
+        </div>
+        <div class="incoming-actions">
+          <button id="btn-answer" class="btn btn-success">✅ Atender</button>
+          <button id="btn-reject" class="btn btn-danger">❌ Rejeitar</button>
+        </div>
+      </div>
+
+      <!-- Dialpad view -->
+      <section id="view-dialpad" class="view active">
+        <h2>Teclado de Discagem</h2>
+        <div class="dialpad-container">
+          <input id="dial-input" class="dial-input" type="text" placeholder="Digite o número..." autocomplete="off">
+          <div class="dial-grid">
+            <button class="dial-key" data-digit="1">1</button>
+            <button class="dial-key" data-digit="2">2<span>ABC</span></button>
+            <button class="dial-key" data-digit="3">3<span>DEF</span></button>
+            <button class="dial-key" data-digit="4">4<span>GHI</span></button>
+            <button class="dial-key" data-digit="5">5<span>JKL</span></button>
+            <button class="dial-key" data-digit="6">6<span>MNO</span></button>
+            <button class="dial-key" data-digit="7">7<span>PQRS</span></button>
+            <button class="dial-key" data-digit="8">8<span>TUV</span></button>
+            <button class="dial-key" data-digit="9">9<span>WXYZ</span></button>
+            <button class="dial-key" data-digit="*">*</button>
+            <button class="dial-key" data-digit="0">0<span>+</span></button>
+            <button class="dial-key" data-digit="#">#</button>
+          </div>
+          <div class="dial-actions">
+            <button id="btn-backspace" class="btn btn-secondary">⌫</button>
+            <button id="btn-call" class="btn btn-call">📞 Ligar</button>
+            <button id="btn-clear" class="btn btn-secondary">C</button>
+          </div>
+          <p class="hint">Atalhos: F1 Atender · F2 Desligar · F3 Mudo · F4 Espera</p>
+        </div>
+      </section>
+
+      <!-- Contacts view -->
+      <section id="view-contacts" class="view">
+        <div class="view-header">
+          <h2>Contatos</h2>
+          <button id="btn-add-contact" class="btn btn-primary">+ Novo</button>
+        </div>
+        <input id="contacts-search" class="search-input" type="text" placeholder="Pesquisar contatos...">
+        <div id="contacts-list" class="list"></div>
+      </section>
+
+      <!-- History view -->
+      <section id="view-history" class="view">
+        <div class="view-header">
+          <h2>Histórico de Chamadas</h2>
+          <button id="btn-clear-history" class="btn btn-secondary">Limpar</button>
+        </div>
+        <div id="history-list" class="list"></div>
+      </section>
+
+      <!-- Browser view -->
+      <section id="view-browser" class="view">
+        <h2>Navegador com Detecção VoxCall</h2>
+        <p class="hint">Números e links tel: detectados recebem um botão 📞 VoxCall.</p>
+        <div class="browser-bar">
+          <input id="browser-url" class="browser-url" type="text" placeholder="https://..." value="https://example.com">
+          <button id="browser-go" class="btn btn-primary">Ir</button>
+        </div>
+        <webview id="browser-webview" class="browser-webview" src="about:blank" allowpopups></webview>
+      </section>
+
+      <!-- Settings view -->
+      <section id="view-settings" class="view">
+        <h2>Configurações</h2>
+
+        <div class="settings-section">
+          <h3>Conta SIP</h3>
+          <div class="form-grid">
+            <label>Domínio SIP<input id="sip-domain" type="text" placeholder="sip.exemplo.com.br"></label>
+            <label>URL WebSocket<input id="sip-ws" type="text" placeholder="wss://sip.exemplo.com.br:8089/ws"></label>
+            <label>URI SIP<input id="sip-uri" type="text" placeholder="sip:1001@exemplo.com.br"></label>
+            <label>Ramal<input id="sip-extension" type="text" placeholder="1001"></label>
+            <label>Nome de Exibição<input id="sip-display" type="text" placeholder="João Silva"></label>
+            <label>Senha<input id="sip-password" type="password" placeholder="••••••••"></label>
+          </div>
+          <div class="settings-actions">
+            <button id="btn-save-sip" class="btn btn-primary">Salvar e Conectar</button>
+            <button id="btn-reconnect" class="btn btn-secondary">Reconectar</button>
+            <button id="btn-disconnect" class="btn btn-secondary">Desconectar</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Preferências</h3>
+          <div class="toggles">
+            <label class="toggle"><input id="toggle-auto-answer" class="toggle-input" type="checkbox"> Atendimento automático</label>
+            <label class="toggle"><input id="toggle-auto-record" class="toggle-input" type="checkbox"> Gravação automática</label>
+            <label class="toggle"><input id="toggle-call-waiting" class="toggle-input" type="checkbox" checked> Espera na linha</label>
+            <label class="toggle"><input id="toggle-click-to-call" class="toggle-input" type="checkbox" checked> Clique para ligar</label>
+            <label class="toggle"><input id="toggle-auto-dial" class="toggle-input" type="checkbox"> Discagem automática (clique para ligar)</label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Teste de Áudio</h3>
+          <div class="audio-test">
+            <div class="meter-group">
+              <label>Microfone</label>
+              <div class="meter-bar"><div id="meter-test-mic" class="meter-fill meter-local"></div></div>
+              <span id="meter-test-mic-val">0%</span>
+              <button id="btn-test-mic" class="btn btn-secondary">🎤 Testar Microfone</button>
+            </div>
+            <div class="meter-group">
+              <button id="btn-test-speaker" class="btn btn-secondary">🔊 Testar Alto-falante</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Diagnostics view -->
+      <section id="view-diagnostics" class="view">
+        <h2>Diagnóstico WebRTC / SIP</h2>
+        <div class="diag-grid">
+          <div class="diag-card"><span class="diag-label">Registro SIP</span><span id="diag-reg" class="diag-value">—</span></div>
+          <div class="diag-card"><span class="diag-label">WebSocket</span><span id="diag-ws" class="diag-value">—</span></div>
+          <div class="diag-card"><span class="diag-label">ICE</span><span id="diag-ice" class="diag-value">—</span></div>
+          <div class="diag-card"><span class="diag-label">UA Status</span><span id="diag-ua" class="diag-value">—</span></div>
+          <div class="diag-card"><span class="diag-label">Permissão Microfone</span><span id="diag-mic-perm" class="diag-value">—</span></div>
+        </div>
+        <h3>Faixas de Mídia Ativas</h3>
+        <div id="diag-tracks" class="diag-tracks"></div>
+      </section>
+    </main>
+
+    <!-- Call panel (overlay) -->
+    <div id="call-panel" class="call-panel">
+      <div class="call-info">
+        <span id="call-status" class="call-status">Em chamada</span>
+        <span id="call-number" class="call-number">—</span>
+        <span id="call-timer" class="call-timer">00:00</span>
+      </div>
+
+      <div class="meters-row">
+        <div class="meter-group">
+          <label>🎤 Microfone</label>
+          <div class="meter-bar"><div id="meter-local" class="meter-fill meter-local"></div></div>
+          <span id="meter-local-val">0%</span>
+        </div>
+        <div class="meter-group">
+          <label>🔊 Remoto</label>
+          <div class="meter-bar"><div id="meter-remote" class="meter-fill meter-remote"></div></div>
+          <span id="meter-remote-val">0%</span>
+        </div>
+      </div>
+
+      <div class="call-controls">
+        <button id="btn-mute" class="btn-call-ctrl">🎤 Mudo</button>
+        <button id="btn-hold" class="btn-call-ctrl">⏸ Espera</button>
+        <button id="btn-hangup" class="btn-call-ctrl btn-hangup">📵 Desligar</button>
+      </div>
+
+      <div class="dtmf-section">
+        <div id="dtmf-display" class="dtmf-display"></div>
+        <div class="dtmf-grid">
+          <button class="dtmf-key" data-digit="1">1</button>
+          <button class="dtmf-key" data-digit="2">2</button>
+          <button class="dtmf-key" data-digit="3">3</button>
+          <button class="dtmf-key" data-digit="4">4</button>
+          <button class="dtmf-key" data-digit="5">5</button>
+          <button class="dtmf-key" data-digit="6">6</button>
+          <button class="dtmf-key" data-digit="7">7</button>
+          <button class="dtmf-key" data-digit="8">8</button>
+          <button class="dtmf-key" data-digit="9">9</button>
+          <button class="dtmf-key" data-digit="*">*</button>
+          <button class="dtmf-key" data-digit="0">0</button>
+          <button class="dtmf-key" data-digit="#">#</button>
+        </div>
+      </div>
+
+      <div class="transfer-section">
+        <h4>Transferência</h4>
+        <input id="transfer-target" class="transfer-input" type="text" placeholder="Ramal ou número destino">
+        <div class="transfer-actions">
+          <button id="btn-blind-transfer" class="btn btn-secondary">↪ Cega</button>
+          <button id="btn-consult" class="btn btn-secondary">👥 Consulta</button>
+        </div>
+        <div id="consult-panel" class="consult-panel">
+          <p>Consulta em andamento</p>
+          <button id="btn-complete-transfer" class="btn btn-primary">✅ Concluir Transferência</button>
+          <button id="btn-swap" class="btn btn-secondary">🔄 Alternar</button>
+          <button id="btn-cancel-consult" class="btn btn-secondary">✖ Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact modal -->
+    <div id="contact-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="contact-modal-title">Novo Contato</h3>
+          <button id="contact-modal-close" class="modal-close">✕</button>
+        </div>
+        <div class="form-grid">
+          <label>Nome *<input id="contact-name" type="text"></label>
+          <label>Telefone *<input id="contact-phone" type="tel"></label>
+          <label>E-mail<input id="contact-email" type="email"></label>
+          <label>Empresa<input id="contact-company" type="text"></label>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-save-contact" class="btn btn-primary">Salvar</button>
+          <button id="btn-cancel-contact" class="btn btn-secondary">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script type="module" src="../dist-renderer/bundle.js"></script>
+</body>
+</html>

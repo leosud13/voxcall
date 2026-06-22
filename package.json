@@ -1,0 +1,42 @@
+{
+  "name": "voxcall",
+  "version": "1.0.0",
+  "description": "Softphone WebRTC com Electron e JsSIP",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-renderer.js",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --dev",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "keywords": ["webrtc", "sip", "softphone", "electron", "jssip", "voip"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "electron-store": "^10.0.0",
+    "jssip": "^3.10.1"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0"
+  },
+  "build": {
+    "appId": "com.voxcall.softphone",
+    "productName": "VoxCall",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "dist-renderer/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
