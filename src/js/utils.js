@@ -11,6 +11,44 @@ export function isValidPhone(raw) {
   return digits.length >= 8 && digits.length <= 15;
 }
 
+/** Aceita ramais SIP curtos (ex.: 1001) e números completos. */
+export function isDialableNumber(raw) {
+  if (!raw || !String(raw).trim()) return false;
+  const value = String(raw).trim();
+  if (value.toLowerCase().startsWith('sip:')) return true;
+  const digits = normalizePhone(value).replace(/\D/g, '');
+  return digits.length >= 3 && digits.length <= 15;
+}
+
+export function extractSipDomain(sipUriOrDomain = '') {
+  const value = String(sipUriOrDomain).trim();
+  if (!value) return '';
+  if (!value.includes('@')) return value.replace(/^sip:/i, '');
+  const match = value.match(/@([^>;?]+)/);
+  return match ? match[1] : '';
+}
+
+export function buildSipUri(config = {}) {
+  const explicit = String(config.sipUri || '').trim();
+  if (explicit) {
+    return explicit.startsWith('sip:') ? explicit : `sip:${explicit}`;
+  }
+  const extension = String(config.extension || '').trim();
+  const domain = String(config.domain || '').trim();
+  if (extension && domain) return `sip:${extension}@${domain}`;
+  return '';
+}
+
+export function buildCallUri(target, domain) {
+  const value = String(target || '').trim();
+  if (!value) throw new Error('Informe o número ou ramal.');
+  if (value.toLowerCase().startsWith('sip:')) return value;
+  if (value.includes('@')) return `sip:${value.replace(/^sip:/i, '')}`;
+  const sipDomain = String(domain || '').trim();
+  if (!sipDomain) throw new Error('Domínio SIP não configurado.');
+  return `sip:${normalizePhone(value)}@${sipDomain}`;
+}
+
 export function formatPhoneDisplay(raw) {
   const n = normalizePhone(raw);
   if (n.length <= 4) return n;

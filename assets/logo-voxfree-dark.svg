@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 118 34" role="img" aria-label="voxfree">
+  <g transform="translate(0 1)">
+    <g transform="translate(96 -1)">
+      <rect x="0" y="0" width="16" height="10" rx="3" fill="#ffffff"/>
+      <path fill="#ffffff" d="M5 10h6l-3 3.5z"/>
+    </g>
+    <text x="0" y="26" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="24" font-weight="700" letter-spacing="-0.4">
+      <tspan fill="#ffffff">vox</tspan><tspan fill="#2ec8f4">fr</tspan><tspan fill="#e91e8c">e</tspan><tspan fill="#2ec8f4">e</tspan>
+    </text>
+  </g>
+</svg>

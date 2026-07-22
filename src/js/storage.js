@@ -30,6 +30,24 @@ export class Storage {
     return window.voxcall.store.set('theme', theme);
   }
 
+  async getCustomLogos() {
+    const data = await this.getAll();
+    return data.customLogos || { dark: '', light: '' };
+  }
+
+  async setCustomLogos(customLogos) {
+    return window.voxcall.store.set('customLogos', customLogos);
+  }
+
+  async getBrandLogos() {
+    const data = await this.getAll();
+    return data.brandLogos || { titulo: '', webphone: '' };
+  }
+
+  async setBrandLogos(brandLogos) {
+    return window.voxcall.store.set('brandLogos', brandLogos);
+  }
+
   async getContacts() {
     const data = await this.getAll();
     return data.contacts || [];
@@ -46,6 +64,15 @@ export class Storage {
 
   async setCallHistory(history) {
     return window.voxcall.store.set('callHistory', history);
+  }
+
+  async getAuth() {
+    const data = await this.getAll();
+    return data.auth || {};
+  }
+
+  async setAuth(auth) {
+    return window.voxcall.store.set('auth', auth);
   }
 
   async addCallRecord(record) {

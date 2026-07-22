@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Chamada recebida</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+    .card {
+      margin: 8px;
+      height: calc(100% - 16px);
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 14px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+      padding: 14px 16px;
+      color: #e8eaed;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .label {
+      font-size: 0.75rem;
+      color: #9aa0b0;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .caller {
+      font-size: 1.15rem;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .number {
+      font-size: 0.85rem;
+      color: #9aa0b0;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: auto;
+      -webkit-app-region: no-drag;
+    }
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: #fff;
+    }
+    .btn-answer { background: #22c55e; }
+    .btn-answer:hover { background: #16a34a; }
+    .btn-reject { background: #ef4444; }
+    .btn-reject:hover { background: #dc2626; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="label">Chamada recebida</div>
+    <div id="caller" class="caller">—</div>
+    <div id="number" class="number">—</div>
+    <div class="actions">
+      <button id="btn-answer" class="btn-answer" type="button">Atender</button>
+      <button id="btn-reject" class="btn-reject" type="button">Recusar</button>
+    </div>
+  </div>
+  <script src="./call-alert.js"></script>
+</body>
+</html>

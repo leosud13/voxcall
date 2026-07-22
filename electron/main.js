@@ -1,12 +1,21 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, shell, session } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, session, Menu, Tray, nativeImage, net, Notification, screen } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { mkdirSync, writeFileSync } from 'fs';
 import Store from 'electron-store';
+import { setupAutoUpdater, checkForUpdates, installUpdate } from './updater.js';
+
+// Evita STUN em adaptadores virtuais (ex.: VirtualBox 192.168.56.x)
+app.commandLine.appendSwitch('webrtc-ip-handling-policy', 'default_public_interface_only');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const store = new Store({ name: 'voxcall-data' });
 
 let mainWindow = null;
+let tray = null;
+let callAlertWindow = null;
+let isQuitting = false;
+let incomingNotification = null;
 
 const DEFAULTS = {
   sip: {
@@ -16,90 +25,337 @@ const DEFAULTS = {
     extension: '',
     displayName: '',
     password: '',
+    stunUrl: '',
   },
   toggles: {
     autoAnswer: false,
+    autoAnswerLocked: false,
     autoRecord: false,
     callWaiting: true,
-    clickToCall: true,
-    autoDialClickToCall: false,
   },
   theme: 'dark',
+  customLogos: {
+    dark: '',
+    light: '',
+  },
+  brandLogos: {
+    titulo: '',
+    webphone: '',
+  },
+  autoLaunch: true,
   contacts: [],
   callHistory: [],
   favorites: [],
+  auth: {
+    loggedIn: false,
+    username: '',
+    passwordMd5: '',
+    remember: false,
+    manual: false,
+    displayName: '',
+    label: '',
+  },
 };
 
 function getDefaults() {
   return JSON.parse(JSON.stringify(DEFAULTS));
 }
 
+function getAppIconPath() {
+  return join(__dirname, '..', 'assets', 'icon.ico');
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  if (process.platform === 'win32') {
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setAlwaysOnTop(false);
+  }
+}
+
+function hideToTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+}
+
+function closeCallAlert() {
+  if (incomingNotification) {
+    try { incomingNotification.close(); } catch { /* ignore */ }
+    incomingNotification = null;
+  }
+  if (callAlertWindow && !callAlertWindow.isDestroyed()) {
+    callAlertWindow.close();
+  }
+  callAlertWindow = null;
+}
+
+function showCallAlert({ caller = 'Desconhecido', number = '' } = {}) {
+  closeCallAlert();
+
+  const displayName = String(caller || number || 'Desconhecido');
+  const displayNumber = String(number || caller || '');
+
+  // Notificação do sistema (clique abre o softphone)
+  if (Notification.isSupported()) {
+    incomingNotification = new Notification({
+      title: 'Chamada recebida',
+      body: displayNumber && displayNumber !== displayName
+        ? `${displayName}\n${displayNumber}`
+        : displayName,
+      icon: getAppIconPath(),
+      silent: false,
+    });
+    incomingNotification.on('click', () => {
+      showMainWindow();
+    });
+    incomingNotification.show();
+  }
+
+  // Pop-up sempre no topo com Atender / Recusar
+  const display = screen.getPrimaryDisplay();
+  const { width: sw, height: sh, workArea } = display;
+  const winW = 340;
+  const winH = 170;
+  const x = Math.round((workArea?.x || 0) + (workArea?.width || sw) - winW - 16);
+  const y = Math.round((workArea?.y || 0) + (workArea?.height || sh) - winH - 16);
+
+  callAlertWindow = new BrowserWindow({
+    width: winW,
+    height: winH,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    focusable: true,
+    title: 'Chamada recebida',
+    icon: getAppIconPath(),
+    webPreferences: {
+      preload: join(__dirname, 'call-alert-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  callAlertWindow.setAlwaysOnTop(true, 'screen-saver');
+  callAlertWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  callAlertWindow.loadFile(join(__dirname, 'call-alert.html'), {
+    query: {
+      caller: displayName,
+      number: displayNumber,
+    },
+  });
+  callAlertWindow.once('ready-to-show', () => {
+    if (callAlertWindow && !callAlertWindow.isDestroyed()) {
+      callAlertWindow.showInactive();
+    }
+  });
+  callAlertWindow.on('closed', () => {
+    callAlertWindow = null;
+  });
+}
+
+function sendCallAction(action) {
+  showMainWindow();
+  closeCallAlert();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('call:action', { action });
+  }
+}
+
+function applyAutoLaunch(enabled) {
+  const openAtLogin = !!enabled;
+  if (!app.isPackaged) {
+    app.setLoginItemSettings({
+      openAtLogin,
+      path: process.execPath,
+      args: openAtLogin ? [join(__dirname, '..'), '--hidden'] : [],
+    });
+    return openAtLogin;
+  }
+
+  app.setLoginItemSettings({
+    openAtLogin,
+    args: openAtLogin ? ['--hidden'] : [],
+  });
+  return openAtLogin;
+}
+
+function ensureAutoLaunchDefault() {
+  if (!store.has('autoLaunch')) {
+    store.set('autoLaunch', true);
+  }
+  const enabled = store.get('autoLaunch', true) !== false;
+  applyAutoLaunch(enabled);
+  return enabled;
+}
+
+function shouldStartHidden() {
+  return process.argv.includes('--hidden') || process.argv.includes('--autostart');
+}
+
+function createTray() {
+  if (tray) return;
+
+  const icon = nativeImage.createFromPath(getAppIconPath());
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+  tray.setToolTip('VoxCall');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Abrir VoxCall',
+      click: () => showMainWindow(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Sair',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+  tray.on('double-click', () => showMainWindow());
+  tray.on('click', () => showMainWindow());
+}
+
 function createWindow() {
+  const startHidden = shouldStartHidden();
+
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 720,
-    minWidth: 900,
-    minHeight: 600,
+    width: 400,
+    height: 824,
+    minWidth: 360,
+    minHeight: 746,
     title: 'VoxCall',
+    icon: getAppIconPath(),
     backgroundColor: '#0f1117',
+    autoHideMenuBar: true,
+    show: !startHidden,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true,
       sandbox: false,
     },
   });
 
   mainWindow.loadFile(join(__dirname, '..', 'src', 'index.html'));
+  mainWindow.setMenuBarVisibility(false);
 
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+      mainWindow.webContents.toggleDevTools();
+    }
+  });
+
+  // Fechar (X) → minimize para a bandeja e continua em background
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      hideToTray();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  if (startHidden) {
+    mainWindow.once('ready-to-show', () => {
+      hideToTray();
+    });
+  }
 }
 
-function registerShortcuts() {
-  const shortcuts = [
-  { key: 'F1', channel: 'shortcut:answer' },
-  { key: 'F2', channel: 'shortcut:hangup' },
-  { key: 'F3', channel: 'shortcut:mute' },
-  { key: 'F4', channel: 'shortcut:hold' },
-  { key: 'F5', channel: 'shortcut:dialpad-focus' },
-  ];
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    showMainWindow();
+  });
 
-  shortcuts.forEach(({ key, channel }) => {
-    globalShortcut.register(key, () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(channel);
+app.whenReady().then(() => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.voxcall.softphone');
+  }
+  Menu.setApplicationMenu(null);
+  ensureAutoLaunchDefault();
+  createTray();
+  createWindow();
+  setupAutoUpdater(() => mainWindow);
+
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      const allowed = ['media', 'microphone', 'audio', 'audioCapture', 'speaker-selection'].includes(permission);
+      callback(allowed);
+    });
+
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+      return ['media', 'microphone', 'audio', 'audioCapture', 'speaker-selection'].includes(permission);
+    });
+
+    session.defaultSession.setDevicePermissionHandler(async (_wc, permission, _requestingOrigin, details) => {
+      if (permission === 'media') {
+        const mediaType = details?.mediaType;
+        return mediaType === 'audio' || mediaType === 'video';
       }
+      return false;
+    });
+
+    app.on('activate', () => {
+      showMainWindow();
     });
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  registerShortcuts();
-
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    const allowed = ['media', 'microphone', 'audio', 'audioCapture'].includes(permission);
-    callback(allowed);
-  });
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
+  closeCallAlert();
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // No Windows/Linux o app permanece na bandeja; só encerra via menu "Sair".
+});
+
+ipcMain.on('call-alert:answer', () => sendCallAction('answer'));
+ipcMain.on('call-alert:reject', () => sendCallAction('reject'));
+
+ipcMain.handle('call:notify-incoming', (_e, payload) => {
+  showCallAlert(payload || {});
+  return true;
+});
+
+ipcMain.handle('call:clear-incoming', () => {
+  closeCallAlert();
+  return true;
 });
 
 // Storage IPC
@@ -123,3 +379,80 @@ ipcMain.handle('store:reset', () => {
 ipcMain.handle('shell:openExternal', (_e, url) => shell.openExternal(url));
 
 ipcMain.handle('app:getVersion', () => app.getVersion());
+
+ipcMain.handle('app:getAutoLaunch', () => store.get('autoLaunch', true) !== false);
+
+ipcMain.handle('app:setAutoLaunch', (_e, enabled) => {
+  const value = !!enabled;
+  store.set('autoLaunch', value);
+  applyAutoLaunch(value);
+  return value;
+});
+
+ipcMain.handle('updater:check', () => checkForUpdates());
+ipcMain.handle('updater:install', () => installUpdate());
+
+async function downloadLogoToCache(url, key) {
+  const value = String(url || '').trim();
+  if (!value) return '';
+  if (value.startsWith('data:') || value.startsWith('file:')) return value;
+
+  const response = await net.fetch(value, {
+    bypassCustomProtocolHandlers: true,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VoxCall/1.0',
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length < 32 || buffer.length > 2 * 1024 * 1024) {
+    throw new Error(`Tamanho inválido do logo: ${buffer.length}`);
+  }
+
+  // Valida se é imagem real
+  const image = nativeImage.createFromBuffer(buffer);
+  if (image.isEmpty()) {
+    throw new Error('Conteúdo baixado não é uma imagem válida');
+  }
+
+  const mime = String(response.headers.get('content-type') || '').toLowerCase();
+  let ext = 'png';
+  if (mime.includes('jpeg') || mime.includes('jpg') || buffer[0] === 0xff) ext = 'jpg';
+  else if (mime.includes('webp')) ext = 'webp';
+  else if (mime.includes('gif')) ext = 'gif';
+  else if (mime.includes('svg')) ext = 'svg';
+
+  const logosDir = join(app.getPath('userData'), 'logos');
+  mkdirSync(logosDir, { recursive: true });
+  const filePath = join(logosDir, `${key}.${ext}`);
+  writeFileSync(filePath, buffer);
+
+  // data URL é mais compatível com CSP do renderer
+  const png = image.toPNG();
+  return `data:image/png;base64,${png.toString('base64')}`;
+}
+
+ipcMain.handle('logo:fetch', async (_e, urls, key = 'logo') => {
+  const list = Array.isArray(urls) ? urls : [urls];
+  const safeKey = String(key || 'logo').replace(/[^\w-]+/g, '_');
+
+  for (const item of list) {
+    const value = String(item || '').trim();
+    if (!value) continue;
+    try {
+      const cached = await downloadLogoToCache(value, safeKey);
+      if (cached) {
+        console.log('[VoxCall] logo cached', safeKey, value);
+        return cached;
+      }
+    } catch (err) {
+      console.error('[VoxCall] logo:fetch failed', value, err?.message || err);
+    }
+  }
+
+  return '';
+});

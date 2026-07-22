@@ -1,5 +1,7 @@
 import JsSIP from 'jssip';
-import { generateId } from './utils.js';
+import { buildSipUri, buildCallUri, extractSipDomain } from './utils.js';
+import { dialLog, dialError } from './debug.js';
+import { RingbackTone } from './ringback.js';
 
 export const CallState = {
   IDLE: 'idle',
@@ -19,8 +21,7 @@ export class SipClient {
     this.ua = null;
     this.session = null;
     this.consultSession = null;
-    this.remoteAudio = new Audio();
-    this.remoteAudio.autoplay = true;
+    this.remoteAudio = null;
     this.localStream = null;
     this.mediaRecorder = null;
     this.recordedChunks = [];
@@ -32,6 +33,7 @@ export class SipClient {
     this.toggles = {};
     this.sipConfig = {};
     this._meterInterval = null;
+    this._ringback = new RingbackTone();
   }
 
   on(event, fn) {
@@ -46,24 +48,25 @@ export class SipClient {
 
   async connect(config, toggles) {
     this.disconnect();
-    this.sipConfig = config;
-    this.toggles = toggles;
+    this.sipConfig = this._normalizeConfig(config);
+    this.toggles = toggles || {};
 
-    if (!config.websocketUrl || !config.sipUri) {
-      throw new Error('URL WebSocket e URI SIP são obrigatórios.');
+    const { websocketUrl, sipUri, password } = this.sipConfig;
+    if (!websocketUrl || !sipUri) {
+      throw new Error('URL WebSocket e URI SIP (ou ramal + domínio) são obrigatórios.');
+    }
+    if (!password) {
+      throw new Error('Senha SIP é obrigatória.');
     }
 
-    const socket = new JsSIP.WebSocketInterface(config.websocketUrl);
-    socket.via_transport = 'WSS';
-
-    const uri = config.sipUri.includes('@') ? config.sipUri : `${config.extension}@${config.domain}`;
-    const sipUri = uri.startsWith('sip:') ? uri : `sip:${uri}`;
+    const socket = new JsSIP.WebSocketInterface(websocketUrl);
+    socket.via_transport = websocketUrl.startsWith('wss') ? 'WSS' : 'WS';
 
     this.ua = new JsSIP.UA({
       sockets: [socket],
       uri: sipUri,
-      password: config.password,
-      display_name: config.displayName || config.extension,
+      password,
+      display_name: this.sipConfig.displayName || this.sipConfig.extension || '',
       register: true,
       session_timers: false,
       connection_recovery_min_interval: 2,
@@ -72,10 +75,27 @@ export class SipClient {
 
     this._bindUaEvents();
     this.ua.start();
+
+    try {
+      JsSIP.debug.enable('JsSIP:*');
+      dialLog('JsSIP debug ativado');
+    } catch {
+      /* optional */
+    }
+
+    dialLog('Conectando UA SIP', {
+      websocketUrl,
+      sipUri,
+      domain: this.sipConfig.domain,
+      extension: this.sipConfig.extension,
+    });
+
     this.emit('state', { registration: 'registering', ws: 'connecting' });
   }
 
   disconnect() {
+    this._ringback.stop();
+    this._clearRemoteAudio();
     this._stopMeters();
     this._stopRecording();
     if (this.session) {
@@ -159,25 +179,134 @@ export class SipClient {
     }
   }
 
-  call(target, options = {}) {
-    if (!this.ua || this.registrationState !== 'registered') {
-      throw new Error('Não registrado no servidor SIP.');
+  _normalizeConfig(config = {}) {
+    const sipUri = buildSipUri(config);
+    const domain = String(config.domain || '').trim() || extractSipDomain(sipUri);
+    return {
+      ...config,
+      websocketUrl: String(config.websocketUrl || '').trim(),
+      sipUri,
+      domain,
+      extension: String(config.extension || '').trim(),
+      displayName: String(config.displayName || '').trim(),
+      password: config.password || '',
+      stunUrl: String(config.stunUrl || '').trim(),
+    };
+  }
+
+  _getPcConfig() {
+    const stunUrl = this.sipConfig.stunUrl?.trim();
+    const iceServers = stunUrl ? [{ urls: stunUrl }] : [];
+    return {
+      iceServers,
+      iceCandidatePoolSize: iceServers.length ? 1 : 0,
+    };
+  }
+
+  _stopRingback() {
+    this._ringback.stop();
+  }
+
+  _ensureRemoteAudioElement() {
+    if (!this.remoteAudio) {
+      this.remoteAudio = document.getElementById('remote-audio');
+      if (!this.remoteAudio) {
+        this.remoteAudio = document.createElement('audio');
+        this.remoteAudio.id = 'remote-audio';
+        this.remoteAudio.autoplay = true;
+        this.remoteAudio.playsInline = true;
+        this.remoteAudio.style.display = 'none';
+        document.body.appendChild(this.remoteAudio);
+      }
     }
-    if (this.session && !options.isConsult) {
-      throw new Error('Já existe uma chamada ativa.');
+    this.remoteAudio.autoplay = true;
+    this.remoteAudio.muted = false;
+    this.remoteAudio.volume = 1;
+    return this.remoteAudio;
+  }
+
+  _attachRemoteAudio(session) {
+    const pc = session?.connection;
+    if (!pc) return false;
+
+    const tracks = pc.getReceivers()
+      .map((r) => r.track)
+      .filter((t) => t && t.kind === 'audio');
+
+    if (!tracks.length) return false;
+
+    const stream = new MediaStream(tracks);
+    const el = this._ensureRemoteAudioElement();
+    el.srcObject = stream;
+
+    const playPromise = el.play();
+    if (playPromise) {
+      playPromise.catch((err) => dialError('remoteAudio.play() falhou', err));
     }
 
-    const domain = this.sipConfig.domain;
-    const uri = target.includes('@')
-      ? (target.startsWith('sip:') ? target : `sip:${target}`)
-      : `sip:${target}@${domain}`;
+    dialLog('Áudio remoto anexado ao alto-falante', {
+      tracks: tracks.length,
+      trackStates: tracks.map((t) => t.readyState),
+    });
+
+    this._startMeters(pc);
+    return true;
+  }
+
+  _clearRemoteAudio() {
+    const el = this.remoteAudio;
+    if (!el) return;
+    try {
+      el.pause();
+      el.srcObject = null;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  call(target, options = {}) {
+    dialLog('call() iniciado', {
+      target,
+      registrationState: this.registrationState,
+      wsState: this.wsState,
+      domain: this.sipConfig.domain,
+      isConsult: !!options.isConsult,
+      hasActiveSession: !!this.session,
+    });
+
+    if (!this.ua || this.registrationState !== 'registered') {
+      const err = new Error('Não registrado no servidor SIP.');
+      dialError('call() bloqueado — não registrado', {
+        hasUa: !!this.ua,
+        registrationState: this.registrationState,
+      });
+      throw err;
+    }
+    if (this.session && !options.isConsult) {
+      const err = new Error('Já existe uma chamada ativa.');
+      dialError('call() bloqueado — chamada ativa', { sessionId: this.session.id });
+      throw err;
+    }
+
+    let uri;
+    try {
+      uri = buildCallUri(target, this.sipConfig.domain);
+    } catch (e) {
+      dialError('call() URI inválida', e);
+      throw e;
+    }
+
+    dialLog('call() URI de destino montada', { uri });
 
     const session = this.ua.call(uri, {
       mediaConstraints: { audio: true, video: false },
-      pcConfig: {
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      },
-      eventHandlers: {},
+      pcConfig: this._getPcConfig(),
+      rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+    });
+
+    dialLog('call() sessão JsSIP criada', {
+      sessionId: session?.id,
+      direction: session?.direction,
     });
 
     if (options.isConsult) {
@@ -187,6 +316,7 @@ export class SipClient {
       this.session = session;
       this._bindSessionEvents(session, 'primary');
       this.emit('outgoing', { target, sessionId: session.id });
+      dialLog('call() evento outgoing emitido', { target, sessionId: session.id });
     }
 
     return session;
@@ -196,9 +326,8 @@ export class SipClient {
     if (!this.session || this.session.direction !== 'incoming') return;
     this.session.answer({
       mediaConstraints: { audio: true, video: false },
-      pcConfig: {
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      },
+      pcConfig: this._getPcConfig(),
+      rtcAnswerConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
     });
   }
 
@@ -239,10 +368,7 @@ export class SipClient {
 
   blindTransfer(target) {
     if (!this.session) throw new Error('Nenhuma chamada ativa.');
-    const domain = this.sipConfig.domain;
-    const uri = target.includes('@')
-      ? (target.startsWith('sip:') ? target : `sip:${target}`)
-      : `sip:${target}@${domain}`;
+    const uri = buildCallUri(target, this.sipConfig.domain);
     this.session.refer(uri);
     this.emit('transfer', { type: 'blind', target });
   }
@@ -283,16 +409,43 @@ export class SipClient {
   }
 
   _bindSessionEvents(session, type) {
-    session.on('progress', () => {
-      if (type === 'primary') this.emit('callState', { state: CallState.RINGING });
+    const logEvent = (name, extra = {}) => {
+      dialLog(`sessão [${type}] → ${name}`, {
+        sessionId: session.id,
+        direction: session.direction,
+        ...extra,
+      });
+    };
+
+    session.on('progress', (e) => {
+      logEvent('progress', {
+        statusCode: e?.response?.status_code,
+        reason: e?.response?.reason_phrase,
+      });
+      if (type === 'primary') {
+        if (session.direction === 'outgoing') {
+          this._ringback.start();
+          dialLog('Ringback local iniciado');
+        }
+        this.emit('callState', { state: CallState.RINGING });
+      }
     });
 
-    session.on('accepted', () => {
+    session.on('accepted', (e) => {
+      this._stopRingback();
+      logEvent('accepted', {
+        statusCode: e?.response?.status_code,
+        reason: e?.response?.reason_phrase,
+      });
+      this._attachRemoteAudio(session);
       if (type === 'primary') this.emit('callState', { state: CallState.CONNECTED });
       if (type === 'consult') this.emit('consultState', { state: CallState.CONNECTED });
     });
 
     session.on('confirmed', () => {
+      this._stopRingback();
+      logEvent('confirmed');
+      this._attachRemoteAudio(session);
       if (type === 'primary') {
         this.emit('callState', { state: CallState.CONNECTED });
         if (this.toggles.autoRecord) this._startRecording();
@@ -300,16 +453,26 @@ export class SipClient {
     });
 
     session.on('hold', () => {
+      logEvent('hold');
       if (type === 'primary') this.emit('callState', { state: CallState.HELD });
     });
 
     session.on('unhold', () => {
+      logEvent('unhold');
       if (type === 'primary') this.emit('callState', { state: CallState.CONNECTED });
     });
 
-    session.on('ended', () => {
+    session.on('ended', (e) => {
+      this._stopRingback();
+      logEvent('ended', {
+        originator: e?.originator,
+        cause: e?.cause,
+        statusCode: e?.message?.status_code,
+        reason: e?.message?.reason_phrase,
+      });
       this._stopRecording();
       this._stopMeters();
+      this._clearRemoteAudio();
       if (type === 'consult') {
         this.consultSession = null;
         this.emit('consultState', { state: CallState.ENDED });
@@ -322,68 +485,104 @@ export class SipClient {
     });
 
     session.on('failed', (e) => {
+      this._stopRingback();
+      const cause = e?.cause || e?.message || 'Falha na chamada';
+      dialError(`sessão [${type}] → failed`, {
+        cause,
+        originator: e?.originator,
+        statusCode: e?.message?.status_code,
+        reason: e?.message?.reason_phrase,
+        message: e?.message,
+      });
+      this._stopRecording();
+      this._stopMeters();
+      this._clearRemoteAudio();
       if (type === 'consult') {
         this.consultSession = null;
-        this.emit('consultState', { state: CallState.ENDED, cause: e.cause });
+        this.emit('consultState', { state: CallState.ENDED, cause });
       } else {
         this.session = null;
-        this.emit('callState', { state: CallState.ENDED, cause: e.cause });
+        this.emit('callFailed', { cause });
+        this.emit('callState', { state: CallState.ENDED, cause });
+        this.emit('callEnded', { sessionId: session.id, cause });
       }
+      this.emit('diagnostics', this.getDiagnostics());
     });
 
     session.on('peerconnection', (data) => {
       const pc = data.peerconnection;
+      logEvent('peerconnection', { signalingState: pc.signalingState });
       pc.addEventListener('iceconnectionstatechange', () => {
         this.iceState = pc.iceConnectionState;
+        dialLog(`ICE [${type}]`, { state: this.iceState, sessionId: session.id });
         this.emit('ice', { state: this.iceState });
         this.emit('diagnostics', this.getDiagnostics());
       });
+      pc.addEventListener('icegatheringstatechange', () => {
+        dialLog(`ICE gathering [${type}]`, { state: pc.iceGatheringState });
+      });
+      pc.addEventListener('connectionstatechange', () => {
+        dialLog(`RTCPeerConnection [${type}]`, { state: pc.connectionState });
+      });
       pc.addEventListener('track', (ev) => {
         if (ev.track.kind === 'audio') {
-          const stream = ev.streams[0] || new MediaStream([ev.track]);
-          this.remoteAudio.srcObject = stream;
-          this._startMeters(pc, stream);
+          this._stopRingback();
+          logEvent('track audio recebido', { trackId: ev.track.id, enabled: ev.track.enabled });
+          this._attachRemoteAudio(session);
           this.emit('diagnostics', this.getDiagnostics());
         }
       });
     });
 
     session.on('getusermediafailed', (e) => {
+      dialError(`sessão [${type}] → getusermediafailed`, e);
       this.emit('error', { message: `Falha ao acessar microfone: ${e}` });
+    });
+
+    session.on('sdp', (e) => {
+      dialLog(`sessão [${type}] → sdp`, { originator: e?.originator, type: e?.type });
     });
   }
 
-  _startMeters(pc, remoteStream) {
+  _startMeters(pc) {
     this._stopMeters();
-    let audioCtx;
+    if (!pc) return;
+
     try {
-      audioCtx = new AudioContext();
+      const audioCtx = new AudioContext();
       const analyserLocal = audioCtx.createAnalyser();
-      const analyserRemote = audioCtx.createAnalyser();
       analyserLocal.fftSize = 256;
-      analyserRemote.fftSize = 256;
 
-      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-        this.localStream = stream;
-        const localSource = audioCtx.createMediaStreamSource(stream);
+      const sender = pc.getSenders().find((s) => s.track?.kind === 'audio');
+      if (sender?.track) {
+        const localSource = audioCtx.createMediaStreamSource(new MediaStream([sender.track]));
         localSource.connect(analyserLocal);
-      }).catch(() => {});
-
-      if (remoteStream) {
-        const remoteSource = audioCtx.createMediaStreamSource(remoteStream);
-        remoteSource.connect(analyserRemote);
       }
 
       const localData = new Uint8Array(analyserLocal.frequencyBinCount);
-      const remoteData = new Uint8Array(analyserRemote.frequencyBinCount);
 
-      this._meterInterval = setInterval(() => {
+      this._meterInterval = setInterval(async () => {
         analyserLocal.getByteFrequencyData(localData);
-        analyserRemote.getByteFrequencyData(remoteData);
         const localLevel = this._avgLevel(localData);
-        const remoteLevel = this._avgLevel(remoteData);
+        let remoteLevel = 0;
+
+        try {
+          const stats = await pc.getStats();
+          stats.forEach((report) => {
+            if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+              if (typeof report.audioLevel === 'number') {
+                remoteLevel = Math.max(remoteLevel, Math.round(report.audioLevel * 100));
+              } else if (typeof report.bytesReceived === 'number' && report.bytesReceived > 0) {
+                remoteLevel = Math.max(remoteLevel, 5);
+              }
+            }
+          });
+        } catch {
+          /* stats optional */
+        }
+
         this.emit('meters', { local: localLevel, remote: remoteLevel });
-      }, 100);
+      }, 200);
 
       this._audioCtx = audioCtx;
     } catch {

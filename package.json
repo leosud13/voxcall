@@ -1,27 +1,45 @@
 {
   "name": "voxcall",
-  "version": "1.0.0",
+  "version": "1.2.6",
   "description": "Softphone WebRTC com Electron e JsSIP",
   "main": "electron/main.js",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leosud13/voxcall.git"
+  },
   "scripts": {
     "build": "node scripts/build-renderer.js",
+    "icon": "node scripts/generate-icon.js",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --dev",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "pack": "npm run build && npm run icon && electron-builder --dir",
+    "dist": "npm run build && npm run icon && electron-builder",
+    "dist:publish": "npm run build && npm run icon && electron-builder --publish always"
   },
-  "keywords": ["webrtc", "sip", "softphone", "electron", "jssip", "voip"],
+  "keywords": [
+    "webrtc",
+    "sip",
+    "softphone",
+    "electron",
+    "jssip",
+    "voip"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "electron-store": "^10.0.0",
+    "electron-updater": "^6.6.2",
+    "js-md5": "^0.8.3",
     "jssip": "^3.10.1"
   },
   "devDependencies": {
     "electron": "^35.0.0",
     "electron-builder": "^25.1.8",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "png-to-ico": "^3.0.2",
+    "rcedit": "^5.0.2",
+    "sharp": "^0.35.3"
   },
   "build": {
     "appId": "com.voxcall.softphone",
@@ -35,8 +53,27 @@
       "dist-renderer/**/*",
       "assets/**/*"
     ],
+    "afterPack": "scripts/after-pack.cjs",
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false,
+      "artifactName": "VoxCall-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "differentialPackage": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "leosud13",
+      "repo": "voxcall"
     }
   }
 }

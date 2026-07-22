@@ -12,10 +12,28 @@ contextBridge.exposeInMainWorld('voxcall', {
   },
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    getAutoLaunch: () => ipcRenderer.invoke('app:getAutoLaunch'),
+    setAutoLaunch: (enabled) => ipcRenderer.invoke('app:setAutoLaunch', enabled),
   },
-  onShortcut: (channel, callback) => {
-    const handler = (_e, ...args) => callback(...args);
-    ipcRenderer.on(channel, handler);
-    return () => ipcRenderer.removeListener(channel, handler);
+  logo: {
+    fetch: (urls, key) => ipcRenderer.invoke('logo:fetch', urls, key),
+  },
+  call: {
+    notifyIncoming: (payload) => ipcRenderer.invoke('call:notify-incoming', payload),
+    clearIncoming: () => ipcRenderer.invoke('call:clear-incoming'),
+    onAction: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('call:action', handler);
+      return () => ipcRenderer.removeListener('call:action', handler);
+    },
+  },
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    onStatus: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('updater:status', handler);
+      return () => ipcRenderer.removeListener('updater:status', handler);
+    },
   },
 });
