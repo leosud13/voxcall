@@ -650,6 +650,15 @@ function bindSipEvents() {
 }
 
 // ─── Status bar ──────────────────────────────────────────────────────────────
+function getExtensionNumber() {
+  return String(appData?.auth?.label || appData?.sip?.extension || '').trim();
+}
+
+function formatStatusWithExtension(baseText) {
+  const ext = getExtensionNumber();
+  return ext ? `${ext} · ${baseText}` : baseText;
+}
+
 function updateRegLight(type, text) {
   const light = $('#reg-status-light');
   const textEl = $('#reg-status-text');
@@ -660,10 +669,10 @@ function updateRegLight(type, text) {
 
   if (type === 'registered') {
     regType = 'registered';
-    label = 'Registrado';
+    label = formatStatusWithExtension('Registrado');
   } else if (type === 'connecting') {
     regType = 'registering';
-    label = 'Registrando';
+    label = formatStatusWithExtension('Registrando');
   } else {
     regType = 'offline';
     label = 'Sem registro';
@@ -676,11 +685,14 @@ function updateRegLight(type, text) {
 
 function setStatus(type, text) {
   const el = $('#status-badge');
+  const display = (type === 'registered' || type === 'connecting')
+    ? formatStatusWithExtension(text)
+    : text;
   if (el) {
     el.className = `status-badge status-${type}`;
-    el.textContent = text;
+    el.textContent = display;
   }
-  updateRegLight(type, text);
+  updateRegLight(type, display);
 }
 
 function renderStatus() {
