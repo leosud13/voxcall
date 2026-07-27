@@ -384,13 +384,14 @@ body.has-update-banner.has-missed-banner .missed-banner.visible {
 }
 
 .home-status-bar {
-  position: fixed;
-  right: 8px;
-  bottom: 8px;
-  z-index: 60;
+  position: static;
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
+  margin: 0 0 14px;
+  z-index: auto;
 }
 
 .reg-status-light {
@@ -857,10 +858,6 @@ body.has-update-banner.has-missed-banner .missed-banner.visible {
 body.in-call .main .view {
   visibility: hidden;
   pointer-events: none;
-}
-
-body.in-call .home-status-bar {
-  opacity: 0.35;
 }
 
 .call-panel {
