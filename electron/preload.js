@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('voxcall', {
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   },
+  net: {
+    latency: (host, port) => ipcRenderer.invoke('net:latency', host, port),
+  },
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
     getAutoLaunch: () => ipcRenderer.invoke('app:getAutoLaunch'),

@@ -23,6 +23,8 @@ let micTestCleanup = null;
 let appData = {};
 let callAnswered = false;
 let callRejectedByUser = false;
+let latencyTimer = null;
+let latencyInFlight = false;
 
 const HISTORY_STATUS_LABELS = {
   missed: 'Perdida',
@@ -659,6 +661,87 @@ function formatStatusWithExtension(baseText) {
   return ext ? `${ext} · ${baseText}` : baseText;
 }
 
+function getSipLatencyTarget() {
+  const raw = String(appData?.sip?.websocketUrl || '').trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:'));
+    const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
+    if (!url.hostname || !port) return null;
+    return { host: url.hostname, port };
+  } catch {
+    return null;
+  }
+}
+
+function latencyLevel(ms) {
+  if (ms == null || !Number.isFinite(ms)) return null;
+  if (ms <= 50) return 'good';
+  if (ms <= 75) return 'warn';
+  return 'bad';
+}
+
+function updateLatencyIndicator(ms) {
+  const el = $('#latency-indicator');
+  const valueEl = $('#latency-value');
+  if (!el || !valueEl) return;
+
+  const level = latencyLevel(ms);
+  if (!level) {
+    el.hidden = true;
+    return;
+  }
+
+  el.hidden = false;
+  el.className = `latency-indicator latency-${level}`;
+  el.title = `Latência: ${ms} ms`;
+  valueEl.textContent = `${ms} ms`;
+}
+
+function hideLatencyIndicator() {
+  const el = $('#latency-indicator');
+  if (!el) return;
+  el.hidden = true;
+  el.className = 'latency-indicator';
+  const valueEl = $('#latency-value');
+  if (valueEl) valueEl.textContent = '— ms';
+}
+
+async function refreshLatency() {
+  if (latencyInFlight) return;
+  if (!window.voxcall?.net?.latency) return;
+
+  const target = getSipLatencyTarget();
+  if (!target) {
+    hideLatencyIndicator();
+    return;
+  }
+
+  latencyInFlight = true;
+  try {
+    const ms = await window.voxcall.net.latency(target.host, target.port);
+    updateLatencyIndicator(typeof ms === 'number' ? ms : null);
+  } catch {
+    hideLatencyIndicator();
+  } finally {
+    latencyInFlight = false;
+  }
+}
+
+function startLatencyMonitor() {
+  if (latencyTimer) return;
+  refreshLatency();
+  latencyTimer = setInterval(refreshLatency, 5000);
+}
+
+function stopLatencyMonitor() {
+  if (latencyTimer) {
+    clearInterval(latencyTimer);
+    latencyTimer = null;
+  }
+  hideLatencyIndicator();
+}
+
 function updateRegLight(type, text) {
   const light = $('#reg-status-light');
   const textEl = $('#reg-status-text');
@@ -670,12 +753,15 @@ function updateRegLight(type, text) {
   if (type === 'registered') {
     regType = 'registered';
     label = formatStatusWithExtension('Registrado');
+    startLatencyMonitor();
   } else if (type === 'connecting') {
     regType = 'registering';
     label = formatStatusWithExtension('Registrando');
+    stopLatencyMonitor();
   } else {
     regType = 'offline';
     label = 'Sem registro';
+    stopLatencyMonitor();
   }
 
   light.className = `reg-status-light reg-${regType}`;

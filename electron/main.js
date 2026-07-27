@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, session, Menu, Tray, nativeImage, n
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, writeFileSync } from 'fs';
+import { connect as netConnect } from 'net';
 import Store from 'electron-store';
 import { setupAutoUpdater, checkForUpdates, installUpdate } from './updater.js';
 
@@ -377,6 +378,30 @@ ipcMain.handle('store:reset', () => {
 });
 
 ipcMain.handle('shell:openExternal', (_e, url) => shell.openExternal(url));
+
+ipcMain.handle('net:latency', async (_e, host, port) => {
+  const hostname = String(host || '').trim();
+  const portNum = Number(port);
+  if (!hostname || !Number.isFinite(portNum) || portNum <= 0) return null;
+
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const socket = netConnect({ host: hostname, port: portNum });
+    let settled = false;
+
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      try { socket.destroy(); } catch { /* ignore */ }
+      resolve(value);
+    };
+
+    socket.setTimeout(4000);
+    socket.once('connect', () => finish(Math.max(1, Date.now() - start)));
+    socket.once('timeout', () => finish(null));
+    socket.once('error', () => finish(null));
+  });
+});
 
 ipcMain.handle('app:getVersion', () => app.getVersion());
 

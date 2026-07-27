@@ -383,11 +383,18 @@ body.has-update-banner.has-missed-banner .missed-banner.visible {
   align-items: center;
 }
 
-.reg-status-light {
+.home-status-bar {
   position: fixed;
   right: 8px;
   bottom: 8px;
   z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reg-status-light {
+  position: static;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -398,6 +405,53 @@ body.has-update-banner.has-missed-banner .missed-banner.visible {
   font-size: 0.72rem;
   color: var(--text-secondary);
   box-shadow: var(--shadow);
+}
+
+.latency-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  color: #22c55e;
+}
+
+.latency-indicator[hidden] {
+  display: none !important;
+}
+
+.latency-bars {
+  width: 14px;
+  height: 12px;
+  display: block;
+  flex-shrink: 0;
+}
+
+.latency-bar {
+  fill: currentColor;
+}
+
+.latency-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.latency-good {
+  color: #22c55e;
+}
+
+.latency-warn {
+  color: #eab308;
+}
+
+.latency-bad {
+  color: #ef4444;
 }
 
 .reg-light {
@@ -789,7 +843,7 @@ body.in-call .main .view {
   pointer-events: none;
 }
 
-body.in-call #reg-status-light {
+body.in-call .home-status-bar {
   opacity: 0.35;
 }
 
