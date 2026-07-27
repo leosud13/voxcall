@@ -676,8 +676,8 @@ function getSipLatencyTarget() {
 
 function latencyLevel(ms) {
   if (ms == null || !Number.isFinite(ms)) return null;
-  if (ms <= 50) return 'good';
-  if (ms <= 75) return 'warn';
+  if (ms <= 70) return 'good';
+  if (ms <= 110) return 'warn';
   return 'bad';
 }
 
@@ -731,7 +731,7 @@ async function refreshLatency() {
 function startLatencyMonitor() {
   if (latencyTimer) return;
   refreshLatency();
-  latencyTimer = setInterval(refreshLatency, 5000);
+  latencyTimer = setInterval(refreshLatency, 60000);
 }
 
 function stopLatencyMonitor() {

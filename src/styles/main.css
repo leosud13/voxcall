@@ -434,6 +434,7 @@ body.has-update-banner.has-missed-banner .missed-banner.visible {
 
 .latency-bar {
   fill: currentColor;
+  transition: fill 0.2s ease, opacity 0.2s ease;
 }
 
 .latency-value {
@@ -446,12 +447,27 @@ body.has-update-banner.has-missed-banner .missed-banner.visible {
   color: #22c55e;
 }
 
+.latency-good .latency-bar {
+  opacity: 1;
+}
+
 .latency-warn {
   color: #eab308;
 }
 
+.latency-warn .latency-bar-3 {
+  opacity: 0.22;
+  fill: currentColor;
+}
+
 .latency-bad {
   color: #ef4444;
+}
+
+.latency-bad .latency-bar-2,
+.latency-bad .latency-bar-3 {
+  opacity: 0.22;
+  fill: currentColor;
 }
 
 .reg-light {
