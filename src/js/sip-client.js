@@ -487,14 +487,22 @@ export class SipClient {
     };
 
     session.on('progress', (e) => {
+      const hasEarlyMedia = !!e?.response?.body;
       logEvent('progress', {
         statusCode: e?.response?.status_code,
         reason: e?.response?.reason_phrase,
+        hasEarlyMedia,
       });
       if (type === 'primary') {
         if (session.direction === 'outgoing') {
-          this._ringback.start();
-          dialLog('Ringback local iniciado');
+          // Se o PABX/operadora já envia tom via early media (SDP), não sintetiza ringback local
+          if (!hasEarlyMedia) {
+            this._ringback.start();
+            dialLog('Ringback local iniciado (sem early media)');
+          } else {
+            this._stopRingback();
+            dialLog('Early media detectado, ringback local pausado');
+          }
         }
         this.emit('callState', { state: CallState.RINGING });
       }
