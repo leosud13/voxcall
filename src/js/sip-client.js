@@ -2,6 +2,7 @@ import JsSIP from 'jssip';
 import { buildSipUri, buildCallUri, extractSipDomain } from './utils.js';
 import { dialLog, dialError } from './debug.js';
 import { RingbackTone } from './ringback.js';
+import { IncomingRingtone } from './ringtone.js';
 
 export const CallState = {
   IDLE: 'idle',
@@ -34,6 +35,7 @@ export class SipClient {
     this.sipConfig = {};
     this._meterInterval = null;
     this._ringback = new RingbackTone();
+    this._ringtone = new IncomingRingtone();
   }
 
   on(event, fn) {
@@ -94,7 +96,8 @@ export class SipClient {
   }
 
   disconnect() {
-    this._ringback.stop();
+    this._stopRingback();
+    this._stopRingtone();
     this._clearRemoteAudio();
     this._stopMeters();
     this._stopRecording();
@@ -176,6 +179,9 @@ export class SipClient {
 
     if (this.toggles.autoAnswer) {
       setTimeout(() => this.answer(), 500);
+    } else {
+      this._ringtone.start();
+      dialLog('Toque de chamada recebida iniciado');
     }
   }
 
@@ -205,6 +211,10 @@ export class SipClient {
 
   _stopRingback() {
     this._ringback.stop();
+  }
+
+  _stopRingtone() {
+    this._ringtone.stop();
   }
 
   _ensureRemoteAudioElement() {
@@ -324,6 +334,7 @@ export class SipClient {
 
   answer() {
     if (!this.session || this.session.direction !== 'incoming') return;
+    this._stopRingtone();
     this.session.answer({
       mediaConstraints: { audio: true, video: false },
       pcConfig: this._getPcConfig(),
@@ -333,10 +344,13 @@ export class SipClient {
 
   reject() {
     if (!this.session || this.session.direction !== 'incoming') return;
+    this._stopRingtone();
     this.session.terminate({ status_code: 486, reason_phrase: 'Rejected' });
   }
 
   hangup(sessionType = 'primary') {
+    this._stopRingtone();
+    this._stopRingback();
     const s = sessionType === 'consult' ? this.consultSession : this.session;
     if (s) s.terminate();
   }
@@ -433,6 +447,7 @@ export class SipClient {
 
     session.on('accepted', (e) => {
       this._stopRingback();
+      this._stopRingtone();
       logEvent('accepted', {
         statusCode: e?.response?.status_code,
         reason: e?.response?.reason_phrase,
@@ -444,6 +459,7 @@ export class SipClient {
 
     session.on('confirmed', () => {
       this._stopRingback();
+      this._stopRingtone();
       logEvent('confirmed');
       this._attachRemoteAudio(session);
       if (type === 'primary') {
@@ -464,6 +480,7 @@ export class SipClient {
 
     session.on('ended', (e) => {
       this._stopRingback();
+      this._stopRingtone();
       logEvent('ended', {
         originator: e?.originator,
         cause: e?.cause,
@@ -486,6 +503,7 @@ export class SipClient {
 
     session.on('failed', (e) => {
       this._stopRingback();
+      this._stopRingtone();
       const cause = e?.cause || e?.message || 'Falha na chamada';
       dialError(`sessão [${type}] → failed`, {
         cause,
