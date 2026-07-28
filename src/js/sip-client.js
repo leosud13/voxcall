@@ -36,6 +36,7 @@ export class SipClient {
     this._meterInterval = null;
     this._ringback = new RingbackTone();
     this._ringtone = new IncomingRingtone();
+    this._hasRemoteAudio = false;
   }
 
   on(event, fn) {
@@ -309,6 +310,7 @@ export class SipClient {
       playPromise.catch((err) => dialError('remoteAudio.play() falhou', err));
     }
 
+    this._hasRemoteAudio = true;
     dialLog('Áudio remoto anexado ao alto-falante', {
       tracks: tracks.length,
       trackStates: tracks.map((t) => t.readyState),
@@ -319,6 +321,7 @@ export class SipClient {
   }
 
   _clearRemoteAudio() {
+    this._hasRemoteAudio = false;
     const el = this.remoteAudio;
     if (!el) return;
     try {
@@ -362,6 +365,9 @@ export class SipClient {
     }
 
     dialLog('call() URI de destino montada', { uri });
+
+    this._hasRemoteAudio = false;
+    this._stopRingback();
 
     const session = this.ua.call(uri, {
       mediaConstraints: { audio: true, video: false },
@@ -487,25 +493,36 @@ export class SipClient {
     };
 
     session.on('progress', (e) => {
-      const hasEarlyMedia = !!e?.response?.body;
+      const statusCode = Number(e?.response?.status_code) || 0;
+      const body = String(e?.response?.body || '');
+      // Early media real: 183 com SDP de áudio (não basta ter qualquer body)
+      const hasEarlyMedia = statusCode === 183 && /(?:^|\r?\n)m=audio/im.test(body);
+
       logEvent('progress', {
-        statusCode: e?.response?.status_code,
+        statusCode,
         reason: e?.response?.reason_phrase,
         hasEarlyMedia,
+        bodyLength: body.length,
       });
-      if (type === 'primary') {
-        if (session.direction === 'outgoing') {
-          // Se o PABX/operadora já envia tom via early media (SDP), não sintetiza ringback local
-          if (!hasEarlyMedia) {
-            this._ringback.start();
-            dialLog('Ringback local iniciado (sem early media)');
-          } else {
-            this._stopRingback();
-            dialLog('Early media detectado, ringback local pausado');
-          }
+
+      if (type !== 'primary') return;
+      if (session.isEstablished?.() || session.isEnded?.()) return;
+
+      if (session.direction === 'outgoing') {
+        if (hasEarlyMedia) {
+          this._stopRingback();
+          this._attachRemoteAudio(session);
+          dialLog('Early media detectado (183+SDP), ringback local pausado');
+        } else if (!this._hasRemoteAudio) {
+          this._ringback.start();
+          dialLog('Ringback local iniciado', { statusCode });
+        } else {
+          this._stopRingback();
+          dialLog('Áudio remoto já ativo, ringback local mantido pausado');
         }
-        this.emit('callState', { state: CallState.RINGING });
       }
+
+      this.emit('callState', { state: CallState.RINGING });
     });
 
     session.on('accepted', (e) => {

@@ -635,6 +635,8 @@ function bindSipEvents() {
       startCallTimer();
       updateHistoryLast('answered');
     } else if (state === CallState.RINGING) {
+      // Evita zerar o cronômetro se a chamada já foi atendida
+      if (callAnswered) return;
       $('#call-status').textContent = 'Chamando...';
       // Timer só começa quando a chamada for atendida
       stopCallTimer({ reset: true });
