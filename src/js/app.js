@@ -64,19 +64,32 @@ async function init() {
   updateDiagnostics();
   updateAccountSection();
 
-  if (shouldShowLogin()) {
-    showLogin();
-    prefillLoginForm();
-    if (appData.auth?.remember && appData.auth?.username && appData.auth?.passwordMd5) {
-      await performLogin(appData.auth.username, null, appData.auth.passwordMd5, true);
-    }
+  const auth = appData.auth || {};
+
+  // Conta manual (legado): conecta com SIP local, sem API
+  if (auth.manual === true) {
+    showApp();
+    if (appData.sip?.websocketUrl) await tryConnect();
     return;
   }
 
-  showApp();
-  if (appData.sip?.websocketUrl) {
-    tryConnect();
+  // Sempre revalida no endpoint na inicialização (credenciais / config do ramal)
+  if (auth.username && auth.passwordMd5) {
+    showLogin();
+    prefillLoginForm();
+    await revalidateSessionOnStartup();
+    return;
   }
+
+  // Sem senha salva: exige login (mesmo se havia sessão antiga)
+  if (auth.loggedIn) {
+    const cleared = { ...auth, loggedIn: false };
+    await storage.setAuth(cleared);
+    appData.auth = cleared;
+  }
+
+  showLogin();
+  prefillLoginForm();
 }
 
 // ─── Theme & Logo ────────────────────────────────────────────────────────────
@@ -428,6 +441,57 @@ async function applyAuthSession(username, passwordMd5, remember, payload, manual
   return sip;
 }
 
+async function revalidateSessionOnStartup() {
+  const auth = appData.auth || {};
+  const username = String(auth.username || '').trim();
+  const passwordMd5 = String(auth.passwordMd5 || '').trim().toLowerCase();
+
+  if (!username || !passwordMd5) {
+    showLogin();
+    prefillLoginForm();
+    return false;
+  }
+
+  setLoginLoading(true);
+  showLoginError('');
+  const btn = $('#btn-login');
+  if (btn) btn.textContent = 'Validando...';
+
+  dialLog('Revalidando sessão no endpoint na inicialização', { username });
+
+  try {
+    const payload = await authenticateVoxfree(username, null, passwordMd5);
+    await applyAuthSession(username, passwordMd5, !!auth.remember, payload, false);
+    dialLog('Sessão revalidada com sucesso', {
+      extension: appData.sip?.extension,
+      domain: appData.sip?.domain,
+    });
+    return true;
+  } catch (e) {
+    dialError('Falha ao revalidar sessão na inicialização', e);
+    sipClient.disconnect();
+
+    const nextAuth = {
+      loggedIn: false,
+      username: auth.remember ? username : '',
+      passwordMd5: auth.remember ? passwordMd5 : '',
+      remember: !!auth.remember,
+      manual: false,
+      displayName: '',
+      label: '',
+    };
+    await storage.setAuth(nextAuth);
+    appData.auth = nextAuth;
+
+    showLogin();
+    prefillLoginForm();
+    showLoginError(e.message || 'Não foi possível validar a sessão. Faça login novamente.');
+    return false;
+  } finally {
+    setLoginLoading(false);
+  }
+}
+
 async function performLogin(username, plainPassword, passwordMd5 = null, isAuto = false) {
   setLoginLoading(true);
   showLoginError('');
@@ -544,7 +608,7 @@ function bindSipEvents() {
     showIncomingBanner(info);
     addHistoryEntry({ direction: 'incoming', number: info.caller, name: info.display, status: 'ringing' });
     window.voxcall?.call?.notifyIncoming?.({
-      caller: info.display || info.caller,
+      caller: info.display && info.display !== info.caller ? info.display : info.caller,
       number: info.caller,
     });
   });
@@ -1029,9 +1093,15 @@ function hideCallPanel() {
 }
 
 function showIncomingBanner(info) {
+  const name = String(info.display || '').trim();
+  const number = String(info.caller || '').trim();
+  const hasName = name && name !== number;
+
   $('#incoming-banner').classList.add('visible');
-  $('#incoming-caller').textContent = info.display || info.caller;
-  $('#incoming-number').textContent = formatPhoneDisplay(info.caller);
+  $('#incoming-caller').textContent = hasName ? name : (number || '—');
+  $('#incoming-number').textContent = hasName
+    ? formatPhoneDisplay(number)
+    : (number ? formatPhoneDisplay(number) : '—');
 }
 
 function hideIncomingBanner() {

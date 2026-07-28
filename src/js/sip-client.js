@@ -168,9 +168,64 @@ export class SipClient {
     });
   }
 
+  _extractDisplayName(nameAddr, rawHeader = '') {
+    let name = String(nameAddr?.display_name ?? '').trim();
+    name = name.replace(/^"(.*)"$/, '$1').trim();
+
+    if (!name && rawHeader) {
+      const header = String(rawHeader);
+      const quoted = header.match(/^\s*"([^"]+)"\s*</);
+      const unquoted = header.match(/^\s*([^"<;][^<]*?)\s*</);
+      const candidate = (quoted?.[1] || unquoted?.[1] || '').trim();
+      if (candidate && !/^sip:/i.test(candidate)) {
+        name = candidate.replace(/^"(.*)"$/, '$1').trim();
+      }
+    }
+
+    return name;
+  }
+
+  _resolveRemoteParty(session) {
+    const identity = session.remote_identity;
+    const request = session._request;
+    const fromRaw = request?.getHeader?.('From') || request?.getHeader?.('from') || '';
+    const paiRaw = request?.getHeader?.('P-Asserted-Identity') || '';
+    const rpidRaw = request?.getHeader?.('Remote-Party-ID') || '';
+
+    const caller = String(identity?.uri?.user || 'Desconhecido').trim();
+    let display = this._extractDisplayName(identity, fromRaw);
+
+    if (!display || display === caller) {
+      const fromIdentity = this._extractDisplayName(request?.from, fromRaw);
+      if (fromIdentity && fromIdentity !== caller) display = fromIdentity;
+    }
+
+    if (!display || display === caller) {
+      for (const raw of [paiRaw, rpidRaw]) {
+        const alt = this._extractDisplayName(null, raw);
+        if (alt && alt !== caller) {
+          display = alt;
+          break;
+        }
+      }
+    }
+
+    if (!display) display = caller;
+
+    dialLog('Identidade remota da chamada', {
+      caller,
+      display,
+      fromRaw,
+      paiRaw: paiRaw || undefined,
+      rpidRaw: rpidRaw || undefined,
+      identityDisplayName: identity?.display_name || null,
+    });
+
+    return { caller, display };
+  }
+
   _handleIncoming(session) {
-    const caller = session.remote_identity?.uri?.user || 'Desconhecido';
-    const display = session.remote_identity?.display_name || caller;
+    const { caller, display } = this._resolveRemoteParty(session);
 
     this.session = session;
     this._bindSessionEvents(session, 'primary');
