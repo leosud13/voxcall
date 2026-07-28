@@ -61,6 +61,7 @@ async function init() {
   renderStatus();
   renderContacts();
   renderHistory();
+  seedCallerNamesFromHistory();
   updateMissedAlert();
   updateDiagnostics();
   updateAccountSection();
@@ -1078,16 +1079,50 @@ function toggleCallExtraPanel(panel) {
   }
 }
 
+function seedCallerNamesFromHistory() {
+  const map = { ...(appData.callerNames || {}) };
+  let changed = false;
+  for (const entry of appData.callHistory || []) {
+    const number = String(entry?.number || '').trim();
+    const name = String(entry?.name || '').trim();
+    if (!number || !name || name === number || map[number]) continue;
+    map[number] = name;
+    changed = true;
+  }
+  if (changed) {
+    appData.callerNames = map;
+    void window.voxcall?.store?.set?.('callerNames', map);
+  }
+}
+
+function lookupCallerName(number) {
+  const num = String(number || '').trim();
+  if (!num) return '';
+  const cached = String(appData.callerNames?.[num] || '').trim();
+  if (cached && cached !== num) return cached;
+  const contact = contactsManager.findByPhone?.(num);
+  return String(contact?.name || '').trim();
+}
+
+function rememberCallerName(number, name) {
+  const num = String(number || '').trim();
+  const n = String(name || '').trim();
+  if (!num || !n || n === num) return;
+  const map = { ...(appData.callerNames || {}) };
+  if (map[num] === n) return;
+  map[num] = n;
+  appData.callerNames = map;
+  void window.voxcall?.store?.set?.('callerNames', map);
+}
+
 function resolveCallParty(number, displayName = '') {
   const num = String(number || '').trim();
   let name = String(displayName || '').trim();
   if (name && (name === num || name.toLowerCase() === num.toLowerCase())) {
     name = '';
   }
-  if (!name && num) {
-    const contact = contactsManager.findByPhone?.(num);
-    if (contact?.name) name = String(contact.name).trim();
-  }
+  if (!name) name = lookupCallerName(num);
+  if (name) rememberCallerName(num, name);
   return { number: num, name };
 }
 

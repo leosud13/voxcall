@@ -45,6 +45,7 @@ const DEFAULTS = {
   autoLaunch: true,
   contacts: [],
   callHistory: [],
+  callerNames: {},
   favorites: [],
   auth: {
     loggedIn: false,

@@ -1,4 +1,4 @@
-import { generateId, normalizePhone, isValidPhone } from './utils.js';
+import { generateId, normalizePhone, isDialableNumber } from './utils.js';
 import { storage } from './storage.js';
 
 export class ContactsManager {
@@ -35,7 +35,7 @@ export class ContactsManager {
 
   async add({ name, phone, email, company }) {
     if (!name?.trim()) throw new Error('Nome é obrigatório.');
-    if (!isValidPhone(phone)) throw new Error('Número de telefone inválido.');
+    if (!isDialableNumber(phone)) throw new Error('Número ou ramal inválido.');
     const contact = {
       id: generateId(),
       name: name.trim(),
@@ -53,7 +53,7 @@ export class ContactsManager {
   async update(id, data) {
     const idx = this.contacts.findIndex((c) => c.id === id);
     if (idx === -1) throw new Error('Contato não encontrado.');
-    if (data.phone && !isValidPhone(data.phone)) throw new Error('Número inválido.');
+    if (data.phone && !isDialableNumber(data.phone)) throw new Error('Número ou ramal inválido.');
     this.contacts[idx] = {
       ...this.contacts[idx],
       ...data,
@@ -80,7 +80,11 @@ export class ContactsManager {
 
   findByPhone(phone) {
     const n = normalizePhone(phone);
-    return this.contacts.find((c) => normalizePhone(c.phone) === n);
+    if (!n) return undefined;
+    return this.contacts.find((c) => {
+      const p = normalizePhone(c.phone);
+      return p === n || p.endsWith(n) || n.endsWith(p);
+    });
   }
 }
 
