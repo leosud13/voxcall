@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, session, Menu, Tray, nativeImage, net, Notification, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, session, Menu, Tray, nativeImage, net, screen } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { mkdirSync, writeFileSync } from 'fs';
@@ -16,7 +16,6 @@ let mainWindow = null;
 let tray = null;
 let callAlertWindow = null;
 let isQuitting = false;
-let incomingNotification = null;
 
 const DEFAULTS = {
   sip: {
@@ -86,10 +85,6 @@ function hideToTray() {
 }
 
 function closeCallAlert() {
-  if (incomingNotification) {
-    try { incomingNotification.close(); } catch { /* ignore */ }
-    incomingNotification = null;
-  }
   if (callAlertWindow && !callAlertWindow.isDestroyed()) {
     callAlertWindow.close();
   }
@@ -102,23 +97,7 @@ function showCallAlert({ caller = 'Desconhecido', number = '' } = {}) {
   const displayName = String(caller || number || 'Desconhecido');
   const displayNumber = String(number || caller || '');
 
-  // Notificação do sistema (clique abre o softphone)
-  if (Notification.isSupported()) {
-    incomingNotification = new Notification({
-      title: 'Chamada recebida',
-      body: displayNumber && displayNumber !== displayName
-        ? `${displayName}\n${displayNumber}`
-        : displayName,
-      icon: getAppIconPath(),
-      silent: false,
-    });
-    incomingNotification.on('click', () => {
-      showMainWindow();
-    });
-    incomingNotification.show();
-  }
-
-  // Pop-up sempre no topo com Atender / Recusar
+  // Pop-up sempre no topo com Atender / Recusar (sem toast do Windows, que sobrepunha este alerta)
   const display = screen.getPrimaryDisplay();
   const { width: sw, height: sh, workArea } = display;
   const winW = 340;
@@ -162,7 +141,8 @@ function showCallAlert({ caller = 'Desconhecido', number = '' } = {}) {
   });
   callAlertWindow.once('ready-to-show', () => {
     if (callAlertWindow && !callAlertWindow.isDestroyed()) {
-      callAlertWindow.showInactive();
+      callAlertWindow.show();
+      callAlertWindow.moveTop();
     }
   });
   callAlertWindow.on('closed', () => {
