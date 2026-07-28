@@ -173,44 +173,65 @@ export class SipClient {
     let name = String(nameAddr?.display_name ?? '').trim();
     name = name.replace(/^"(.*)"$/, '$1').trim();
 
-    if (!name && rawHeader) {
-      const header = String(rawHeader);
-      const quoted = header.match(/^\s*"([^"]+)"\s*</);
-      const unquoted = header.match(/^\s*([^"<;][^<]*?)\s*</);
+    const header = String(rawHeader || '').trim();
+    if (!name && header) {
+      const quoted = header.match(/"([^"]+)"/);
+      const unquoted = header.match(/^([^"<;][^<]*?)\s*</);
       const candidate = (quoted?.[1] || unquoted?.[1] || '').trim();
-      if (candidate && !/^sip:/i.test(candidate)) {
+      if (candidate && !/^sip:/i.test(candidate) && !/^tel:/i.test(candidate)) {
         name = candidate.replace(/^"(.*)"$/, '$1').trim();
       }
     }
 
+    // Cabeçalhos que trazem só o nome (sem URI)
+    if (!name && header && !header.includes('<') && !/^sip:/i.test(header) && !/^tel:/i.test(header)) {
+      const plain = header.replace(/^"(.*)"$/, '$1').trim();
+      if (plain) name = plain;
+    }
+
+    // Ignora "nome" que é só o próprio ramal/número
     return name;
   }
 
   _resolveRemoteParty(session) {
     const identity = session.remote_identity;
     const request = session._request;
-    const fromRaw = request?.getHeader?.('From') || request?.getHeader?.('from') || '';
-    const paiRaw = request?.getHeader?.('P-Asserted-Identity') || '';
+    const parsedFrom = request?.parseHeader?.('From') || request?.parseHeader?.('from') || null;
+
+    const fromRaw = request?.getHeader?.('From')
+      || request?.getHeader?.('from')
+      || identity?.toString?.()
+      || '';
+    const paiRaw = request?.getHeader?.('P-Asserted-Identity')
+      || request?.getHeader?.('P-Preferred-Identity')
+      || '';
     const rpidRaw = request?.getHeader?.('Remote-Party-ID') || '';
+    const contactRaw = request?.getHeader?.('Contact') || '';
+    const callerNameRaw = request?.getHeader?.('Caller-ID-Name')
+      || request?.getHeader?.('CNAM')
+      || request?.getHeader?.('X-Caller-Name')
+      || request?.getHeader?.('X-Display-Name')
+      || '';
 
-    const caller = String(identity?.uri?.user || 'Desconhecido').trim();
-    let display = this._extractDisplayName(identity, fromRaw);
+    const caller = String(
+      identity?.uri?.user
+      || parsedFrom?.uri?.user
+      || 'Desconhecido'
+    ).trim();
 
-    if (!display || display === caller) {
-      const fromIdentity = this._extractDisplayName(request?.from, fromRaw);
-      if (fromIdentity && fromIdentity !== caller) display = fromIdentity;
-    }
+    const candidates = [
+      this._extractDisplayName(identity, fromRaw),
+      this._extractDisplayName(parsedFrom, fromRaw),
+      this._extractDisplayName(request?.from, fromRaw),
+      this._extractDisplayName(null, paiRaw),
+      this._extractDisplayName(null, rpidRaw),
+      this._extractDisplayName(null, contactRaw),
+      this._extractDisplayName(null, callerNameRaw),
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
 
-    if (!display || display === caller) {
-      for (const raw of [paiRaw, rpidRaw]) {
-        const alt = this._extractDisplayName(null, raw);
-        if (alt && alt !== caller) {
-          display = alt;
-          break;
-        }
-      }
-    }
-
+    let display = candidates.find((name) => name.toLowerCase() !== caller.toLowerCase()) || '';
     if (!display) display = caller;
 
     dialLog('Identidade remota da chamada', {
@@ -219,7 +240,11 @@ export class SipClient {
       fromRaw,
       paiRaw: paiRaw || undefined,
       rpidRaw: rpidRaw || undefined,
-      identityDisplayName: identity?.display_name || null,
+      contactRaw: contactRaw || undefined,
+      callerNameRaw: callerNameRaw || undefined,
+      identityDisplayName: identity?.display_name ?? null,
+      parsedFromDisplayName: parsedFrom?.display_name ?? null,
+      candidates,
     });
 
     return { caller, display };

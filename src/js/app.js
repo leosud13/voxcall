@@ -19,6 +19,7 @@ let callSeconds = 0;
 let isMuted = false;
 let isHeld = false;
 let incomingInfo = null;
+let activeCallParty = null;
 let micTestCleanup = null;
 let appData = {};
 let callAnswered = false;
@@ -605,10 +606,11 @@ function bindSipEvents() {
     incomingInfo = info;
     callAnswered = false;
     callRejectedByUser = false;
+    activeCallParty = resolveCallParty(info.caller, info.display);
     showIncomingBanner(info);
-    addHistoryEntry({ direction: 'incoming', number: info.caller, name: info.display, status: 'ringing' });
+    addHistoryEntry({ direction: 'incoming', number: info.caller, name: activeCallParty.name || info.display, status: 'ringing' });
     window.voxcall?.call?.notifyIncoming?.({
-      caller: info.display && info.display !== info.caller ? info.display : info.caller,
+      caller: activeCallParty.name || info.caller,
       number: info.caller,
     });
   });
@@ -617,8 +619,9 @@ function bindSipEvents() {
     dialLog('UI: chamada outgoing', info);
     callAnswered = false;
     callRejectedByUser = false;
-    showCallPanel(info.target);
-    addHistoryEntry({ direction: 'outgoing', number: info.target, status: 'calling' });
+    activeCallParty = resolveCallParty(info.target);
+    showCallPanel(activeCallParty);
+    addHistoryEntry({ direction: 'outgoing', number: info.target, name: activeCallParty.name || '', status: 'calling' });
   });
 
   sipClient.on('callState', ({ state, cause }) => {
@@ -628,9 +631,10 @@ function bindSipEvents() {
       hideIncomingBanner();
       window.voxcall?.call?.clearIncoming?.();
       if (incomingInfo) {
-        showCallPanel(incomingInfo.display || incomingInfo.caller);
+        activeCallParty = resolveCallParty(incomingInfo.caller, incomingInfo.display);
         incomingInfo = null;
       }
+      showCallPanel(activeCallParty);
       $('#call-status').textContent = 'Em chamada';
       startCallTimer();
       updateHistoryLast('answered');
@@ -661,6 +665,7 @@ function bindSipEvents() {
     isMuted = false;
     isHeld = false;
     incomingInfo = null;
+    activeCallParty = null;
     callAnswered = false;
     callRejectedByUser = false;
 
@@ -990,7 +995,8 @@ function answerIncomingCall() {
   hideIncomingBanner();
   window.voxcall?.call?.clearIncoming?.();
   if (info) {
-    showCallPanel(info.display || info.caller);
+    activeCallParty = resolveCallParty(info.caller, info.display);
+    showCallPanel(activeCallParty);
     $('#call-status').textContent = 'Atendendo...';
   }
   sipClient.answer();
@@ -1000,6 +1006,7 @@ function rejectIncomingCall() {
   hideIncomingBanner();
   window.voxcall?.call?.clearIncoming?.();
   incomingInfo = null;
+  activeCallParty = null;
   callRejectedByUser = true;
   sipClient.reject();
 }
@@ -1071,11 +1078,44 @@ function toggleCallExtraPanel(panel) {
   }
 }
 
-function showCallPanel(number) {
+function resolveCallParty(number, displayName = '') {
+  const num = String(number || '').trim();
+  let name = String(displayName || '').trim();
+  if (name && (name === num || name.toLowerCase() === num.toLowerCase())) {
+    name = '';
+  }
+  if (!name && num) {
+    const contact = contactsManager.findByPhone?.(num);
+    if (contact?.name) name = String(contact.name).trim();
+  }
+  return { number: num, name };
+}
+
+function showCallPanel(partyOrNumber) {
+  const party = typeof partyOrNumber === 'string'
+    ? resolveCallParty(partyOrNumber)
+    : resolveCallParty(partyOrNumber?.number, partyOrNumber?.name);
+
+  activeCallParty = party;
   document.body.classList.add('in-call');
   resetCallExtraPanels();
   $('#call-panel')?.classList.add('visible');
-  $('#call-number').textContent = formatPhoneDisplay(number);
+
+  const nameEl = $('#call-name');
+  const numberEl = $('#call-number');
+  if (nameEl) {
+    if (party.name) {
+      nameEl.hidden = false;
+      nameEl.textContent = party.name;
+    } else {
+      nameEl.hidden = true;
+      nameEl.textContent = '';
+    }
+  }
+  if (numberEl) {
+    numberEl.textContent = formatPhoneDisplay(party.number) || party.number || '—';
+  }
+
   $('#call-status').textContent = 'Chamando...';
   stopCallTimer({ reset: true });
   setMeter('meter-local', 0);
@@ -1091,19 +1131,21 @@ function hideCallPanel() {
   if (muteLabel) muteLabel.textContent = 'Mudo';
   const holdLabel = $('#btn-hold')?.querySelector('.btn-call-label');
   if (holdLabel) holdLabel.textContent = 'Espera';
+  const nameEl = $('#call-name');
+  if (nameEl) {
+    nameEl.hidden = true;
+    nameEl.textContent = '';
+  }
   stopCallTimer({ reset: true });
 }
 
 function showIncomingBanner(info) {
-  const name = String(info.display || '').trim();
-  const number = String(info.caller || '').trim();
-  const hasName = name && name !== number;
+  const party = resolveCallParty(info.caller, info.display);
+  const hasName = Boolean(party.name);
 
   $('#incoming-banner').classList.add('visible');
-  $('#incoming-caller').textContent = hasName ? name : (number || '—');
-  $('#incoming-number').textContent = hasName
-    ? formatPhoneDisplay(number)
-    : (number ? formatPhoneDisplay(number) : '—');
+  $('#incoming-caller').textContent = hasName ? party.name : (party.number || '—');
+  $('#incoming-number').textContent = party.number ? formatPhoneDisplay(party.number) : '—';
 }
 
 function hideIncomingBanner() {

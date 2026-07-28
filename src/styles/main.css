@@ -893,7 +893,20 @@ body.in-call .main .view {
 
 .call-info { text-align: center; margin-bottom: 14px; }
 .call-status { display: block; font-size: 0.82rem; color: var(--text-secondary); }
-.call-number { display: block; font-size: 1.35rem; font-weight: 700; margin-top: 2px; }
+.call-name {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 4px;
+  color: var(--text-primary);
+}
+.call-name[hidden] { display: none !important; }
+.call-number { display: block; font-size: 1.05rem; font-weight: 500; margin-top: 2px; color: var(--text-secondary); }
+.call-name[hidden] + .call-number {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
 .call-timer { display: block; font-size: 0.95rem; color: var(--text-muted); margin-top: 4px; }
 
 .meters-row {
