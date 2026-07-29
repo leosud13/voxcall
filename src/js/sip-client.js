@@ -3,6 +3,15 @@ import { buildSipUri, buildCallUri, extractSipDomain } from './utils.js';
 import { dialLog, dialError } from './debug.js';
 import { RingbackTone } from './ringback.js';
 import { IncomingRingtone } from './ringtone.js';
+import { sipDebug } from './sip-logger.js';
+
+try {
+  JsSIP.debug.enable('JsSIP:*');
+  sipDebug.enable();
+  sipDebug.log('JsSIP.debug.enable(JsSIP:*) ativo desde o carregamento do módulo');
+} catch (err) {
+  sipDebug.error('Falha ao ativar JsSIP.debug', err);
+}
 
 export const CallState = {
   IDLE: 'idle',
@@ -81,6 +90,8 @@ export class SipClient {
 
     try {
       JsSIP.debug.enable('JsSIP:*');
+      sipDebug.enable();
+      sipDebug.log('JsSIP debug reativado no connect');
       dialLog('JsSIP debug ativado');
     } catch {
       /* optional */
@@ -91,6 +102,13 @@ export class SipClient {
       sipUri,
       domain: this.sipConfig.domain,
       extension: this.sipConfig.extension,
+    });
+    sipDebug.log('Conectando UA SIP', {
+      websocketUrl,
+      sipUri,
+      domain: this.sipConfig.domain,
+      extension: this.sipConfig.extension,
+      displayName: this.sipConfig.displayName,
     });
 
     this.emit('state', { registration: 'registering', ws: 'connecting' });
@@ -157,6 +175,15 @@ export class SipClient {
 
     ua.on('newRTCSession', (data) => {
       const session = data.session;
+      const req = data.request;
+      sipDebug.log('newRTCSession', {
+        direction: session.direction,
+        from: req?.getHeader?.('From') || req?.getHeader?.('from') || null,
+        to: req?.getHeader?.('To') || req?.getHeader?.('to') || null,
+        callId: req?.getHeader?.('Call-ID') || req?.getHeader?.('Call-Id') || null,
+        hasRequestData: Boolean(req?.data),
+        requestDataLength: String(req?.data || '').length,
+      });
       if (session.direction === 'incoming') {
         if (this.session && this.toggles.callWaiting) {
           this._handleIncoming(session, data.request);
@@ -284,7 +311,7 @@ export class SipClient {
 
     const display = candidates[0] || caller;
 
-    dialLog('Identidade remota da chamada', {
+    const identityDump = {
       caller,
       display,
       fromRaw,
@@ -296,8 +323,13 @@ export class SipClient {
       parsedFromDisplayName: parsedFrom?.display_name ?? null,
       candidates,
       headerNames: Object.keys(allHeaders),
-      rawSipPreview: rawSip ? rawSip.slice(0, 600) : '',
-    });
+      headers: allHeaders,
+      rawSip: rawSip || undefined,
+      rawSipPreview: rawSip ? rawSip.slice(0, 1200) : '',
+    };
+
+    dialLog('Identidade remota da chamada', identityDump);
+    sipDebug.setLastIncomingIdentity(identityDump);
 
     return { caller, display };
   }

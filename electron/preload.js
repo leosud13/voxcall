@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('voxcall', {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
     getAutoLaunch: () => ipcRenderer.invoke('app:getAutoLaunch'),
     setAutoLaunch: (enabled) => ipcRenderer.invoke('app:setAutoLaunch', enabled),
+    openDevTools: () => ipcRenderer.invoke('app:openDevTools'),
+  },
+  log: {
+    sip: (payload) => ipcRenderer.send('log:sip', payload),
   },
   logo: {
     fetch: (urls, key) => ipcRenderer.invoke('logo:fetch', urls, key),

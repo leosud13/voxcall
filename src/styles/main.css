@@ -754,6 +754,33 @@ body.has-update-banner.has-missed-banner .missed-banner.visible {
 .track-item { padding: 4px 0; font-size: 0.85rem; font-family: monospace; }
 .text-muted { color: var(--text-muted); font-size: 0.85rem; }
 
+.diag-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.diag-sip-pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
+  margin: 0 0 16px;
+  color: var(--text);
+}
+
+.diag-sip-log {
+  max-height: 360px;
+}
+
 /* Incoming banner */
 .incoming-banner {
   display: none;

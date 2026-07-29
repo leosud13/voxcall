@@ -245,6 +245,22 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
+  // Encaminha logs do renderer (SIP / JsSIP) para o terminal do npm start
+  mainWindow.webContents.on('console-message', (...args) => {
+    const details = args.length === 1 && args[0] && typeof args[0] === 'object'
+      ? args[0]
+      : { level: args[1], message: args[2], lineNumber: args[3], sourceId: args[4] };
+    const message = String(details.message ?? '');
+    const level = Number(details.level ?? 1);
+    const isSip = /\[VoxCall SIP\]|\[VoxCall\]|JsSIP/i.test(message);
+    if (!isSip && level < 2) return;
+
+    const prefix = level >= 3 ? '[renderer:error]' : level === 2 ? '[renderer:warn]' : '[renderer]';
+    if (level >= 3) console.error(prefix, message);
+    else if (level === 2) console.warn(prefix, message);
+    else console.log(prefix, message);
+  });
+
   mainWindow.webContents.on('before-input-event', (_event, input) => {
     if (input.control && input.shift && input.key.toLowerCase() === 'i') {
       mainWindow.webContents.toggleDevTools();
@@ -385,6 +401,23 @@ ipcMain.handle('net:latency', async (_e, host, port) => {
 });
 
 ipcMain.handle('app:getVersion', () => app.getVersion());
+
+ipcMain.handle('app:openDevTools', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
+  return true;
+});
+
+ipcMain.on('log:sip', (_e, payload) => {
+  const level = payload?.level === 'error' ? 'error' : 'log';
+  const msg = `[VoxCall SIP] ${payload?.message || ''}`;
+  const data = payload?.data;
+  if (data !== undefined && data !== null) {
+    console[level](msg, typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+  } else {
+    console[level](msg);
+  }
+});
 
 ipcMain.handle('app:getAutoLaunch', () => store.get('autoLaunch', true) !== false);
 

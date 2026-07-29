@@ -217,9 +217,21 @@
           <div class="diag-card"><span class="diag-label">ICE</span><span id="diag-ice" class="diag-value">—</span></div>
           <div class="diag-card"><span class="diag-label">UA Status</span><span id="diag-ua" class="diag-value">—</span></div>
           <div class="diag-card"><span class="diag-label">Permissão Microfone</span><span id="diag-mic-perm" class="diag-value">—</span></div>
+          <div class="diag-card"><span class="diag-label">Debug SIP</span><span id="diag-sip-debug" class="diag-value">ON</span></div>
         </div>
         <h3>Faixas de Mídia Ativas</h3>
         <div id="diag-tracks" class="diag-tracks"></div>
+
+        <h3>Debug SIP — última chamada recebida</h3>
+        <p class="text-muted">Receba uma chamada e confira se o <code>From</code> traz o nome (ex.: <code>"Carlos Sabatini" &lt;sip:2101@...&gt;</code>).</p>
+        <div class="diag-actions">
+          <button type="button" id="btn-sip-debug-copy" class="btn btn-secondary">Copiar log SIP</button>
+          <button type="button" id="btn-sip-debug-clear" class="btn btn-secondary">Limpar log</button>
+          <button type="button" id="btn-open-devtools" class="btn btn-secondary">Abrir DevTools</button>
+        </div>
+        <pre id="diag-sip-identity" class="diag-sip-pre">Aguardando chamada recebida…</pre>
+        <h3>Log SIP</h3>
+        <pre id="diag-sip-log" class="diag-sip-pre diag-sip-log">—</pre>
       </section>
     </main>
 

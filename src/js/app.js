@@ -6,6 +6,7 @@ import {
   normalizePhone, isValidPhone, isDialableNumber, generateId,
 } from './utils.js';
 import { dialLog, dialError, dialGroup } from './debug.js';
+import { sipDebug } from './sip-logger.js';
 import { authenticateVoxfree, mapAuthDataToSipConfig, mapAuthDataToToggles } from './vox-auth.js';
 import { md5 } from './md5.js';
 import { dialTone } from './dial-tone.js';
@@ -58,6 +59,7 @@ async function init() {
   bindTransfer();
   bindUpdater();
   bindSipEvents();
+  bindSipDebugPanel();
   renderStatus();
   renderContacts();
   renderHistory();
@@ -884,6 +886,9 @@ function switchView(view) {
   if (view === 'history') {
     markMissedAsViewed();
   }
+  if (view === 'diagnostics') {
+    updateDiagnostics();
+  }
 }
 
 // ─── Dialpad ─────────────────────────────────────────────────────────────────
@@ -1624,10 +1629,86 @@ function updateDiagField(field, value) {
   if (el) el.textContent = value;
 }
 
+function renderSipDebugPanel(snapshot) {
+  updateDiagField('sip-debug', snapshot?.enabled ? 'ON' : 'OFF');
+
+  const identityEl = $('#diag-sip-identity');
+  if (identityEl) {
+    const last = snapshot?.lastIncomingIdentity;
+    if (!last) {
+      identityEl.textContent = 'Aguardando chamada recebida…';
+    } else {
+      const summary = {
+        capturedAt: last.capturedAt,
+        caller: last.caller,
+        display: last.display,
+        fromRaw: last.fromRaw,
+        paiRaw: last.paiRaw,
+        rpidRaw: last.rpidRaw,
+        contactRaw: last.contactRaw,
+        callerNameRaw: last.callerNameRaw,
+        identityDisplayName: last.identityDisplayName,
+        parsedFromDisplayName: last.parsedFromDisplayName,
+        candidates: last.candidates,
+        headerNames: last.headerNames,
+        headers: last.headers,
+        rawSipPreview: last.rawSipPreview,
+      };
+      identityEl.textContent = JSON.stringify(summary, null, 2);
+    }
+  }
+
+  const logEl = $('#diag-sip-log');
+  if (logEl) {
+    const entries = snapshot?.entries || [];
+    logEl.textContent = entries.length
+      ? entries
+        .slice(-80)
+        .map((e) => {
+          const time = String(e.ts || '').split('T')[1]?.replace('Z', '') || e.ts;
+          const data = e.data == null ? '' : ` ${JSON.stringify(e.data)}`;
+          return `${time} [${e.level}] ${e.message}${data}`;
+        })
+        .join('\n')
+      : '—';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function bindSipDebugPanel() {
+  sipDebug.enable();
+  sipDebug.subscribe(renderSipDebugPanel);
+
+  $('#btn-sip-debug-copy')?.addEventListener('click', async () => {
+    const text = sipDebug.formatForCopy();
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Log SIP copiado', 'success');
+    } catch {
+      showToast('Falha ao copiar log SIP', 'error');
+    }
+  });
+
+  $('#btn-sip-debug-clear')?.addEventListener('click', () => {
+    sipDebug.clear();
+    showToast('Log SIP limpo');
+  });
+
+  $('#btn-open-devtools')?.addEventListener('click', async () => {
+    const ok = await window.voxcall?.app?.openDevTools?.();
+    if (!ok) showToast('Não foi possível abrir o DevTools', 'error');
+  });
+}
+
 async function updateDiagnostics() {
   const perms = await sipClient.getPermissionStatus();
   updateDiagField('mic-perm', perms.microphone);
   renderDiagnostics(sipClient.getDiagnostics());
+  renderSipDebugPanel({
+    enabled: sipDebug.isEnabled(),
+    entries: sipDebug.getEntries(),
+    lastIncomingIdentity: sipDebug.getLastIncomingIdentity(),
+  });
 }
 
 function renderDiagnostics(d) {
