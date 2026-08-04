@@ -1,7 +1,7 @@
 {
   "name": "voxcall",
-  "version": "1.2.18",
-  "description": "Softphone WebRTC com Electron e JsSIP",
+  "version": "1.2.19",
+  "description": "Softphone com Electron e JsSIP",
   "main": "electron/main.js",
   "type": "module",
   "repository": {
@@ -43,7 +43,7 @@
   },
   "build": {
     "appId": "com.voxcall.softphone",
-    "productName": "VoxCall",
+    "productName": "vcall",
     "directories": {
       "output": "dist"
     },
@@ -58,7 +58,7 @@
       "target": "nsis",
       "icon": "assets/icon.ico",
       "signAndEditExecutable": false,
-      "artifactName": "VoxCall-Setup-${version}.${ext}"
+      "artifactName": "vcall-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": true,

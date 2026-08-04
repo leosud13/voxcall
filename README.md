@@ -1,6 +1,6 @@
-# VoxCall
+# vcall
 
-Softphone WebRTC profissional construído com **Electron** e **JsSIP**.
+Softphone construído com **Electron** e **JsSIP**.
 
 ## Funcionalidades
 
@@ -13,7 +13,7 @@ Softphone WebRTC profissional construído com **Electron** e **JsSIP**.
 - **Diagnóstico** — WebRTC, permissões, registro SIP, WebSocket, ICE e faixas de mídia
 - **Contatos** — adicionar, editar, excluir, pesquisar e favoritar
 - **Histórico de chamadas** — com discagem rápida
-- **Detecção VoxCall** — links `tel:` e números em páginas web com botão de chamada
+- **Detecção vcall** — links `tel:` e números em páginas web com botão de chamada
 - **Chamadas** — discagem, contatos, histórico e números detectados
 - **Controles** — atender, rejeitar, desligar, silenciar, espera/retomar
 - **DTMF** — teclado durante chamada

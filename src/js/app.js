@@ -48,7 +48,7 @@ async function init() {
   applyTheme(appData.theme || 'dark');
   await contactsManager.load();
   bindNavigation();
-  bindSidebar();
+  bindHeaderBack();
   bindLogin();
   bindDialpad();
   bindCallControls();
@@ -143,7 +143,7 @@ function applyLogo() {
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const btn = $('#theme-toggle');
-  if (btn) btn.textContent = theme === 'dark' ? '☀️ Claro' : '🌙 Escuro';
+  if (btn) btn.textContent = theme === 'dark' ? '☀️ Tema claro' : '🌙 Tema escuro';
   applyLogo();
 }
 
@@ -226,59 +226,28 @@ async function toggleTheme() {
   applyTheme(next);
 }
 
-// ─── Sidebar ─────────────────────────────────────────────────────────────────
-function isSidebarOpen() {
-  return Boolean($('#app')?.classList.contains('sidebar-open'));
-}
+// ─── Header back (telas secundárias) ─────────────────────────────────────────
+const PRIMARY_VIEWS = new Set(['dialpad', 'history', 'contacts', 'settings']);
 
-function shouldShowBackButton() {
-  return isSidebarOpen() || currentView !== 'dialpad';
-}
-
-function updateSidebarToggleUi() {
-  const btn = $('#sidebar-toggle');
+function updateHeaderBackUi() {
+  const btn = $('#header-back');
   const app = $('#app');
   if (!btn || !app) return;
 
-  const showBack = shouldShowBackButton();
+  const showBack = !PRIMARY_VIEWS.has(currentView);
+  btn.hidden = !showBack;
   app.classList.toggle('showing-back', showBack);
-  btn.setAttribute('aria-label', showBack ? 'Voltar' : 'Abrir menu');
-  btn.title = showBack ? 'Voltar' : 'Menu';
 }
 
-function openSidebar() {
-  $('#app')?.classList.add('sidebar-open');
-  const backdrop = $('#sidebar-backdrop');
-  if (backdrop) backdrop.hidden = false;
-  updateSidebarToggleUi();
-}
-
-function closeSidebar() {
-  $('#app')?.classList.remove('sidebar-open');
-  const backdrop = $('#sidebar-backdrop');
-  if (backdrop) backdrop.hidden = true;
-  updateSidebarToggleUi();
-}
-
-function toggleSidebar() {
-  if (isSidebarOpen()) {
-    closeSidebar();
-    return;
-  }
-  if (currentView !== 'dialpad') {
+function bindHeaderBack() {
+  $('#header-back')?.addEventListener('click', () => {
+    if (currentView === 'diagnostics') {
+      switchView('settings');
+      return;
+    }
     switchView('dialpad');
-    return;
-  }
-  openSidebar();
-}
-
-function bindSidebar() {
-  $('#sidebar-toggle')?.addEventListener('click', toggleSidebar);
-  $('#sidebar-backdrop')?.addEventListener('click', closeSidebar);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeSidebar();
   });
-  updateSidebarToggleUi();
+  updateHeaderBackUi();
 }
 
 // ─── Auto Update ─────────────────────────────────────────────────────────────
@@ -844,14 +813,9 @@ function updateRegLight(type, text) {
 }
 
 function setStatus(type, text) {
-  const el = $('#status-badge');
   const display = (type === 'registered' || type === 'connecting')
     ? formatStatusWithExtension(text)
     : text;
-  if (el) {
-    el.className = `status-badge status-${type}`;
-    el.textContent = display;
-  }
   updateRegLight(type, display);
 }
 
@@ -868,21 +832,24 @@ function renderStatus() {
 
 // ─── Navigation ──────────────────────────────────────────────────────────────
 function bindNavigation() {
-  $$('.nav-btn').forEach((btn) => {
+  $$('.bottom-nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const view = btn.dataset.view;
-      switchView(view);
+      if (view) switchView(view);
     });
   });
   $('#theme-toggle')?.addEventListener('click', toggleTheme);
+  $('#btn-open-diagnostics')?.addEventListener('click', () => {
+    switchView('diagnostics');
+  });
 }
 
 function switchView(view) {
   currentView = view;
-  $$('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  const tabView = PRIMARY_VIEWS.has(view) ? view : (view === 'diagnostics' ? 'settings' : 'dialpad');
+  $$('.bottom-nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === tabView));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
-  closeSidebar();
-  updateSidebarToggleUi();
+  updateHeaderBackUi();
   if (view === 'history') {
     markMissedAsViewed();
   }
@@ -1305,7 +1272,7 @@ function bindSettings() {
         const enabled = input.checked;
         await window.voxcall?.app?.setAutoLaunch?.(enabled);
         appData.autoLaunch = enabled;
-        showToast(enabled ? 'VoxCall iniciará com o Windows' : 'Inicialização automática desativada', 'success');
+        showToast(enabled ? 'vcall iniciará com o Windows' : 'Inicialização automática desativada', 'success');
         return;
       }
 
@@ -1553,8 +1520,14 @@ async function markMissedAsViewed() {
 }
 
 function bindMissedBanner() {
-  $('#missed-banner')?.addEventListener('click', () => {
+  $('#missed-banner-open')?.addEventListener('click', () => {
     switchView('history');
+  });
+
+  $('#missed-banner-dismiss')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    markMissedAsViewed();
   });
 }
 

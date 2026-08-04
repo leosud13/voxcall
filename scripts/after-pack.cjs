@@ -11,8 +11,8 @@ module.exports = async function afterPack(context) {
   await rcedit(exePath, {
     icon: iconPath,
     'version-string': {
-      FileDescription: 'VoxCall',
-      ProductName: 'VoxCall',
+      FileDescription: 'vcall',
+      ProductName: 'vcall',
       OriginalFilename: exeName,
     },
   });

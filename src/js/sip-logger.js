@@ -1,6 +1,6 @@
 /** Buffer de debug SIP para console + painel de Diagnóstico. */
 
-const PREFIX = '[VoxCall SIP]';
+const PREFIX = '[vcall SIP]';
 const MAX_ENTRIES = 200;
 
 const listeners = new Set();

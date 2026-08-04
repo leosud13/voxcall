@@ -1,4 +1,4 @@
-const PREFIX = '[VoxCall]';
+const PREFIX = '[vcall]';
 
 export function dialLog(step, data) {
   const time = new Date().toISOString().split('T')[1].slice(0, 12);

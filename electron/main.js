@@ -66,6 +66,12 @@ function getAppIconPath() {
   return join(__dirname, '..', 'assets', 'icon.ico');
 }
 
+function getWindowIconPath() {
+  // Em desenvolvimento (npm start), usar PNG melhora a atualização do ícone na taskbar.
+  if (!app.isPackaged) return join(__dirname, '..', 'assets', 'voxcall-icon.png');
+  return getAppIconPath();
+}
+
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
@@ -195,11 +201,11 @@ function createTray() {
 
   const icon = nativeImage.createFromPath(getAppIconPath());
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
-  tray.setToolTip('VoxCall');
+  tray.setToolTip('vcall');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Abrir VoxCall',
+      label: 'Abrir vcall',
       click: () => showMainWindow(),
     },
     { type: 'separator' },
@@ -225,8 +231,8 @@ function createWindow() {
     height: 824,
     minWidth: 360,
     minHeight: 746,
-    title: 'VoxCall',
-    icon: getAppIconPath(),
+    title: 'vcall — Softphone',
+    icon: getWindowIconPath(),
     backgroundColor: '#0f1117',
     autoHideMenuBar: true,
     show: !startHidden,
@@ -240,6 +246,10 @@ function createWindow() {
 
   mainWindow.loadFile(join(__dirname, '..', 'src', 'index.html'));
   mainWindow.setMenuBarVisibility(false);
+  const windowIcon = nativeImage.createFromPath(getWindowIconPath());
+  if (!windowIcon.isEmpty()) {
+    mainWindow.setIcon(windowIcon);
+  }
 
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -252,7 +262,7 @@ function createWindow() {
       : { level: args[1], message: args[2], lineNumber: args[3], sourceId: args[4] };
     const message = String(details.message ?? '');
     const level = Number(details.level ?? 1);
-    const isSip = /\[VoxCall SIP\]|\[VoxCall\]|JsSIP/i.test(message);
+    const isSip = /\[vcall SIP\]|\[vcall\]|\[VoxCall SIP\]|\[VoxCall\]|JsSIP/i.test(message);
     if (!isSip && level < 2) return;
 
     const prefix = level >= 3 ? '[renderer:error]' : level === 2 ? '[renderer:warn]' : '[renderer]';
@@ -410,7 +420,7 @@ ipcMain.handle('app:openDevTools', () => {
 
 ipcMain.on('log:sip', (_e, payload) => {
   const level = payload?.level === 'error' ? 'error' : 'log';
-  const msg = `[VoxCall SIP] ${payload?.message || ''}`;
+  const msg = `[vcall SIP] ${payload?.message || ''}`;
   const data = payload?.data;
   if (data !== undefined && data !== null) {
     console[level](msg, typeof data === 'string' ? data : JSON.stringify(data, null, 2));
@@ -439,7 +449,7 @@ async function downloadLogoToCache(url, key) {
   const response = await net.fetch(value, {
     bypassCustomProtocolHandlers: true,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VoxCall/1.0',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) vcall/1.0',
       Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
     },
   });
@@ -485,11 +495,11 @@ ipcMain.handle('logo:fetch', async (_e, urls, key = 'logo') => {
     try {
       const cached = await downloadLogoToCache(value, safeKey);
       if (cached) {
-        console.log('[VoxCall] logo cached', safeKey, value);
+        console.log('[vcall] logo cached', safeKey, value);
         return cached;
       }
     } catch (err) {
-      console.error('[VoxCall] logo:fetch failed', value, err?.message || err);
+      console.error('[vcall] logo:fetch failed', value, err?.message || err);
     }
   }
 
